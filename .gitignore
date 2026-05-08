@@ -1,0 +1,20 @@
+# Python
+BulkCLI/__pycache__/
+BulkCLI/**/__pycache__/
+BulkCLI/**/*.pyc
+BulkCLI/venv/
+BulkCLI/.venv/
+BulkCLI/*.sqlite3
+BulkCLI/db.sqlite3
+BulkCLI/data/*.db
+BulkCLI/accounts.txt
+BulkCLI/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# macOS
+.DS_Store
+**/.DS_Store

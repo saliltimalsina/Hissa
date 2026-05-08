@@ -1,0 +1,170 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,900;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Canvas */
+  --bg: #fafaf8;
+  --surface: #ffffff;
+  --surface-2: #f2f5ef;
+  --surface-3: #e8ebe6;
+  --surface-dark: #0e0f0c;
+  --surface-dark-2: #1a1c18;
+  --surface-dark-3: #252720;
+
+  /* Borders */
+  --border: rgba(14, 15, 12, 0.12);
+  --border-bright: rgba(14, 15, 12, 0.22);
+  --border-green: #9fe870;
+
+  /* Text — light context */
+  --text: #0e0f0c;
+  --text-2: #454745;
+  --text-3: #868685;
+
+  /* Text — dark context */
+  --text-inv: #ffffff;
+  --text-inv-2: rgba(255,255,255,0.65);
+  --text-inv-3: rgba(255,255,255,0.35);
+
+  /* Brand accent */
+  --green: #9fe870;
+  --green-text: #163300;
+  --green-dark: #054d28;
+  --green-hover: #cdffad;
+  --green-dim: #e2f6d5;
+  --green-tint: rgba(211, 242, 192, 0.4);
+
+  /* Semantic */
+  --success: #054d28;
+  --success-dim: rgba(5, 77, 40, 0.08);
+  --warning: #b37d00;
+  --warning-dim: rgba(255, 209, 26, 0.2);
+  --danger: #d03238;
+  --danger-dim: rgba(208, 50, 56, 0.08);
+  --info: rgba(56, 200, 255, 0.1);
+
+  /* Shadows — ring only, Wise style */
+  --shadow-ring: rgba(14, 15, 12, 0.12) 0px 0px 0px 1px;
+  --shadow-ring-green: #9fe870 0px 0px 0px 1.5px;
+  --shadow-inset: rgb(134, 134, 133) 0px 0px 0px 1px inset;
+
+  /* Shortcuts for compat */
+  --accent: #9fe870;
+  --accent-dim: #e2f6d5;
+  --accent-text: #163300;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "calt";
+}
+
+/* Wise "calt" on everything */
+*, *::before, *::after {
+  font-feature-settings: "calt";
+}
+
+/* Scrollbar — subtle on light */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #c8ccc5; }
+
+*:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+::selection { background: var(--green-dim); color: var(--text); }
+
+/* Wise button scale — global on all buttons */
+button {
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+button:not(:disabled):hover { transform: scale(1.02); }
+button:not(:disabled):active { transform: scale(0.97); }
+
+/* Primary Wise Green pill */
+.btn-primary {
+  background: var(--green);
+  color: var(--green-text);
+  border-radius: 9999px;
+  font-weight: 600;
+  border: none;
+  padding: 6px 18px;
+  font-size: 13px;
+}
+.btn-primary:not(:disabled):hover {
+  background: var(--green-hover);
+  transform: scale(1.05);
+}
+.btn-primary:not(:disabled):active { transform: scale(0.95); }
+
+/* Ghost pill */
+.btn-ghost {
+  background: rgba(22, 51, 0, 0.06);
+  color: var(--text);
+  border-radius: 9999px;
+  font-weight: 600;
+  border: none;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.btn-ghost:not(:disabled):hover {
+  background: rgba(22, 51, 0, 0.1);
+  transform: scale(1.04);
+}
+
+/* Danger pill */
+.btn-danger {
+  background: var(--danger-dim);
+  color: var(--danger);
+  border-radius: 9999px;
+  border: 1px solid rgba(208,50,56,0.2);
+  font-weight: 600;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.pulse { animation: pulse-dot 2s ease-in-out infinite; }
+
+@keyframes fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { animation: fade-in 0.15s ease-out; }
+
+@keyframes row-in { from { opacity: 0; transform: translateX(-3px); } to { opacity: 1; transform: translateX(0); } }
+.row-in { animation: row-in 0.1s ease-out; }
+
+@keyframes scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+.scale-in { animation: scale-in 0.12s ease-out; }
+
+/* Card — Wise ring shadow */
+.card {
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-ring);
+}
+.card-lg {
+  background: var(--surface);
+  border-radius: 30px;
+  box-shadow: var(--shadow-ring);
+}
