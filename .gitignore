@@ -40,4 +40,5 @@ accounts.csv
 # Project-specific
 BulkCLI/logs/
 BulkCLI/accounts.txt
-BulkCLI/
+BulkCLI/__pycache__/
+BulkCLI/**/__pycache__/
