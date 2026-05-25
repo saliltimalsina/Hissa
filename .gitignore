@@ -42,3 +42,9 @@ BulkCLI/logs/
 BulkCLI/accounts.txt
 BulkCLI/__pycache__/
 BulkCLI/**/__pycache__/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
