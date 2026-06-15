@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.db.database import get_db
 from src.db.models import User, SchedulerRule
 from src.auth.jwt_handler import get_current_user
+from src.auth.session import require_csrf
 
 router = APIRouter(prefix="/api/scheduler", tags=["scheduler"])
 
@@ -59,6 +60,7 @@ def create_rule(
     body: RuleIn,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(require_csrf),
 ):
     if body.rule_type not in ("auto_all", "sector_filter"):
         raise HTTPException(400, "rule_type must be auto_all or sector_filter")
@@ -85,6 +87,7 @@ def toggle_rule(
     rule_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(require_csrf),
 ):
     rule = db.query(SchedulerRule).filter(
         SchedulerRule.id == rule_id,
@@ -102,6 +105,7 @@ def delete_rule(
     rule_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(require_csrf),
 ):
     rule = db.query(SchedulerRule).filter(
         SchedulerRule.id == rule_id,

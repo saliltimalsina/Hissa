@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import './index.css';
 import type { Account, Page, IPO, AccountPortfolio, AccountSnapshot, AccountReport } from './types';
 import Sidebar from './components/layout/Sidebar';
@@ -12,17 +12,44 @@ import Reports from './pages/Reports';
 import Automation from './pages/Automation';
 import Notifications from './pages/Notifications';
 import Settings from './pages/Settings';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import ForgotPassword from './pages/ForgotPassword';
+import { useAuth } from './auth/AuthContext';
+import { api } from './lib/api';
 
-function isComplete(a: Account): boolean {
-  return a.client_id > 0 && !!a.username && !!a.password && !!a.crn && a.pin > 0;
+type AuthView = 'login' | 'signup' | 'forgot';
+
+function AuthGate() {
+  const [view, setView] = useState<AuthView>('login');
+  if (view === 'signup') return <Signup onLogin={() => setView('login')} />;
+  if (view === 'forgot') return <ForgotPassword onLogin={() => setView('login')} />;
+  return <Login onSignup={() => setView('signup')} onForgot={() => setView('forgot')} />;
+}
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F7F8FC]">
+      <svg className="animate-spin h-6 w-6 text-[#5B4DFF]" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+      </svg>
+    </div>
+  );
 }
 
 export default function App() {
+  const { user, loading, logout } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+  if (!user) return <AuthGate />;
+  return <AppShell onLogout={logout} userEmail={user.email} userName={user.name} />;
+}
+
+function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; userEmail: string; userName?: string }) {
   const [page, setPage] = useState<Page>('overview');
-  const [accounts, setAccounts] = useState<Account[]>(() => {
-    try { return JSON.parse(localStorage.getItem('merit_accounts') || '[]'); }
-    catch { return []; }
-  });
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
 
   // Lifted state — shared across pages, persists across navigation
@@ -41,6 +68,7 @@ export default function App() {
   const [reportsError, setReportsError] = useState('');
   const [reportsFetchedAt, setReportsFetchedAt] = useState<number | null>(null);
 
+  // Snapshots/activity hold NO credentials — safe to persist locally, keyed by username.
   const [snapshots, setSnapshots] = useState<Record<string, AccountSnapshot>>(() => {
     try { return JSON.parse(localStorage.getItem('merit_snapshots') || '{}'); }
     catch { return {}; }
@@ -65,28 +93,30 @@ export default function App() {
     localStorage.setItem('merit_snapshots', JSON.stringify(s));
   }
 
-  function setAndSaveAccounts(accs: Account[]) {
-    setAccounts(accs);
-    localStorage.setItem('merit_accounts', JSON.stringify(accs));
-    // Reset auto-load flag so newly-added accounts trigger a refetch on next mount cycle
-    autoLoadedRef.current = false;
-  }
+  // Load account METADATA from the server (never credentials).
+  const refreshAccounts = useCallback(async () => {
+    try {
+      const data = await api<Account[]>('/api/accounts');
+      setAccounts(data);
+      // Allow auto-load to refire after the set changes.
+      autoLoadedRef.current = false;
+    } catch (e) {
+      console.error('Failed to load accounts', e);
+    } finally {
+      setAccountsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAccounts();
+  }, [refreshAccounts]);
 
   async function loadIpos() {
     if (accounts.length === 0) return;
     setLoadingIpos(true);
     setIpoError('');
     try {
-      const res = await fetch('/api/ipos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accounts }),
-      });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.detail || `HTTP ${res.status}`);
-      }
-      const data: IPO[] = await res.json();
+      const data = await api<IPO[]>('/api/ipos', { method: 'POST', body: {} });
       setIpos(data);
       setIposFetchedAt(Date.now());
       if (data.length === 0) setIpoError('No IPOs open for application right now.');
@@ -102,16 +132,7 @@ export default function App() {
     setLoadingPortfolios(true);
     setPortfolioError('');
     try {
-      const res = await fetch('/api/portfolio/aggregate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accounts }),
-      });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.detail || `HTTP ${res.status}`);
-      }
-      const raw = await res.json();
+      const raw = await api<any>('/api/portfolio/aggregate', { method: 'POST', body: {} });
       const data: AccountPortfolio[] = Array.isArray(raw) ? raw : (raw.accounts || []);
       setPortfolios(data);
       setPortfoliosFetchedAt(Date.now());
@@ -127,16 +148,7 @@ export default function App() {
     setLoadingReports(true);
     setReportsError('');
     try {
-      const res = await fetch('/api/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accounts }),
-      });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.detail || `HTTP ${res.status}`);
-      }
-      const raw = await res.json();
+      const raw = await api<any>('/api/reports', { method: 'POST', body: {} });
       const data: AccountReport[] = Array.isArray(raw) ? raw : (raw.accounts || []);
       setReports(data);
       setReportsFetchedAt(Date.now());
@@ -148,17 +160,11 @@ export default function App() {
   }
 
   async function verifyAll() {
-    const complete = accounts.filter(isComplete);
-    if (complete.length === 0) return;
+    if (accounts.length === 0) return;
     setChecking(true);
     try {
-      const res = await fetch('/api/snapshot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accounts: complete }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const raw = await res.json();
+      // Omit account_ids => verify all of the user's accounts.
+      const raw = await api<any>('/api/snapshot', { method: 'POST', body: {} });
       const data: AccountSnapshot[] = Array.isArray(raw) ? raw : (raw.accounts || []);
       const map = { ...snapshots };
       data.forEach(s => { map[s.username] = s; });
@@ -174,16 +180,9 @@ export default function App() {
   }
 
   async function verifyOne(account: Account) {
-    if (!isComplete(account)) return;
     setVerifyingUser(account.username);
     try {
-      const res = await fetch('/api/snapshot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accounts: [account] }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const raw = await res.json();
+      const raw = await api<any>('/api/snapshot', { method: 'POST', body: { account_ids: [account.id] } });
       const data: AccountSnapshot[] = Array.isArray(raw) ? raw : (raw.accounts || []);
       if (data[0]) {
         saveSnapshots({ ...snapshots, [data[0].username]: data[0] });
@@ -200,17 +199,15 @@ export default function App() {
     }
   }
 
-  // Auto-load on app mount when accounts exist
+  // Auto-load once accounts metadata is available.
   const autoLoadedRef = useRef(false);
   useEffect(() => {
-    const complete = accounts.filter(isComplete);
-    if (complete.length === 0 || autoLoadedRef.current) return;
+    if (accounts.length === 0 || autoLoadedRef.current) return;
     autoLoadedRef.current = true;
     loadIpos();
     loadPortfolios();
     loadReports();
-    // Verify only accounts that haven't been verified yet
-    const unverified = complete.filter(a => !snapshots[a.username]);
+    const unverified = accounts.filter(a => !snapshots[a.username]);
     if (unverified.length > 0) verifyAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accounts.length]);
@@ -242,6 +239,9 @@ export default function App() {
         notifications={0}
         onNavigate={setPage}
         snapshots={snapshots}
+        userEmail={userEmail}
+        userName={userName}
+        onLogout={onLogout}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -251,7 +251,7 @@ export default function App() {
           {page === 'overview' && <Overview accounts={accounts} onNavigate={setPage} snapshots={snapshots} ipos={ipos} portfolios={portfolios} portfoliosFetchedAt={portfoliosFetchedAt} iposFetchedAt={iposFetchedAt} activity={activity} />}
           {page === 'ipo-engine' && <IPOEngine accounts={accounts} ipos={ipos} loadingIpos={loadingIpos} ipoError={ipoError} onRefreshIpos={loadIpos} fetchedAt={iposFetchedAt} onActivity={pushActivity} />}
           {page === 'portfolio' && <Portfolio accounts={accounts} portfolios={portfolios} loading={loadingPortfolios} error={portfolioError} onRefresh={loadPortfolios} fetchedAt={portfoliosFetchedAt} />}
-          {page === 'accounts' && <Accounts accounts={accounts} onChange={setAndSaveAccounts} snapshots={snapshots} verifyingUser={verifyingUser} checking={checking} onVerifyOne={verifyOne} onCheckAll={verifyAll} />}
+          {page === 'accounts' && <Accounts accounts={accounts} accountsLoaded={accountsLoaded} onRefresh={refreshAccounts} snapshots={snapshots} verifyingUser={verifyingUser} checking={checking} onVerifyOne={verifyOne} onCheckAll={verifyAll} />}
           {page === 'reports' && <Reports accounts={accounts} reports={reports} loading={loadingReports} error={reportsError} onRefresh={loadReports} fetchedAt={reportsFetchedAt} />}
           {page === 'automation' && <Automation />}
           {page === 'notifications' && <Notifications />}

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from src.db.database import get_db
 from src.db.models import User, MSAccount
 from src.auth.jwt_handler import get_current_user
+from src.auth.session import require_csrf
 from src.auth.crypto import encrypt, decrypt
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -89,6 +90,7 @@ def add_account(
     body: AccountIn,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(require_csrf),
 ):
     existing = db.query(MSAccount).filter(
         MSAccount.user_id == current_user.id,
@@ -118,6 +120,7 @@ def update_account(
     body: AccountUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(require_csrf),
 ):
     acc = db.query(MSAccount).filter(
         MSAccount.id == account_id,
@@ -147,6 +150,7 @@ def delete_account(
     account_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(require_csrf),
 ):
     acc = db.query(MSAccount).filter(
         MSAccount.id == account_id,
@@ -164,6 +168,7 @@ def bulk_import(
     rows: List[BulkImportRow],
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(require_csrf),
 ):
     added, skipped = 0, 0
     for row in rows:

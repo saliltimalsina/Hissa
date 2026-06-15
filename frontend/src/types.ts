@@ -8,14 +8,15 @@ export type Page =
   | 'notifications'
   | 'settings';
 
+// App-state account is METADATA only — credentials live encrypted server-side
+// and are never held in the browser beyond a transient add/edit form.
 export interface Account {
-  client_id: number;
+  id: number;
   username: string;
-  password: string;
-  crn: string;
-  pin: number;
+  client_id: number;
   label?: string;
-  group?: string;
+  group_name?: string;
+  created_at?: string;
 }
 
 export interface IPO {

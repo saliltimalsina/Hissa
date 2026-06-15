@@ -6,13 +6,17 @@ interface Props {
   notifications: number;
   onNavigate: (page: Page) => void;
   snapshots: Record<string, AccountSnapshot>;
+  userEmail: string;
+  userName?: string;
+  onLogout: () => void;
 }
 
-export default function TopBar({ accounts, onOpenCmd, notifications, onNavigate, snapshots }: Props) {
+export default function TopBar({ accounts, onOpenCmd, notifications, onNavigate, snapshots, userEmail, userName, onLogout }: Props) {
   const issues = Object.values(snapshots).filter(s => ['auth_failed', 'expired', 'error'].includes(s.status));
   const expiring = Object.values(snapshots).filter(s => s.status === 'expiring');
   const verifiedCount = Object.keys(snapshots).length;
-  const completeAccounts = accounts.filter(a => a.client_id > 0 && a.username && a.password && a.crn && a.pin > 0).length;
+  // Every loaded account is "ready" — credentials live encrypted server-side.
+  const completeAccounts = accounts.length;
   const unverified = Math.max(0, completeAccounts - verifiedCount);
 
   const allHealthy = issues.length === 0 && expiring.length === 0 && unverified === 0 && completeAccounts > 0;
@@ -73,6 +77,23 @@ export default function TopBar({ accounts, onOpenCmd, notifications, onNavigate,
             </span>
           )}
         </button>
+
+        {/* Divider */}
+        <span className="w-px h-5 bg-[#ECECF2]" />
+
+        {/* User identity + logout */}
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs text-[#6B7280] max-w-[160px] truncate" title={userEmail}>
+            {userName || userEmail}
+          </span>
+          <button
+            onClick={onLogout}
+            className="px-2.5 py-1 text-xs font-medium text-[#374151] border border-[#ECECF2] rounded-md hover:border-[#D1D5DB] hover:text-[#111827] transition-colors"
+            title="Sign out"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
     </header>
   );

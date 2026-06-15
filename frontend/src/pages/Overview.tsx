@@ -71,7 +71,7 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
   const issues = Object.values(snapshots).filter(s => ['auth_failed', 'expired', 'error'].includes(s.status));
   const expiring = Object.values(snapshots).filter(s => s.status === 'expiring');
   const healthy = Object.values(snapshots).filter(s => s.status === 'healthy').length;
-  const completeAccounts = accounts.filter(a => a.client_id > 0 && a.username && a.password && a.crn && a.pin > 0).length;
+  const completeAccounts = accounts.length;
   const unverified = Math.max(0, completeAccounts - Object.keys(snapshots).length);
 
   const totalPortfolioValue = portfolios.reduce((s, p) => s + (p.total_value || 0), 0);

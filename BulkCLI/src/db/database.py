@@ -33,5 +33,7 @@ def get_db():
 
 
 def init_db():
-    from src.db.models import User, MSAccount, ApplicationHistory, SchedulerRule  # noqa
+    from src.db.models import (  # noqa
+        User, MSAccount, ApplicationHistory, SchedulerRule, PasswordReset,
+    )
     Base.metadata.create_all(bind=engine)

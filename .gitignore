@@ -42,3 +42,7 @@ BulkCLI/logs/
 BulkCLI/accounts.txt
 BulkCLI/__pycache__/
 BulkCLI/**/__pycache__/
+# Local SQLite DB — never commit (holds encrypted user credentials)
+BulkCLI/data/*.db
+*.sqlite
+*.sqlite3

@@ -9,11 +9,17 @@ from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
+import os
+
 import requests as req_lib
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.middleware import SlowAPIMiddleware
 
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
@@ -22,16 +28,57 @@ from src.models.user import User
 from src.models.ipo_application import IPOApplication
 from src.services.application_service import ApplicationService
 from src.config.settings import get_settings
+from src.config.security import FRONTEND_URL
+from src.config.ratelimit import limiter
+from src.db.database import get_db
+from src.db.models import User as DBUser
+from src.auth.jwt_handler import get_current_user
+from src.auth.session import require_csrf
+from src.routers.accounts import get_decrypted_accounts
+from src.routers import auth as auth_router
+from src.routers import accounts as accounts_router
+from src.routers import history as history_router
+from src.routers import scheduler as scheduler_router
 
-app = FastAPI(title="Nepal Capital OS API")
+app = FastAPI(title="Hissa API")
+
+# Rate limiting (slowapi) — keyed by client IP, applied per-endpoint in routers.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    """Create DB tables if they don't exist (fresh Postgres on first deploy)."""
+    from src.db.database import init_db
+    init_db()
+
+
+# Allowed CORS origins: env-driven, defaulting to local dev + the prod frontend.
+# (In production the frontend and API are same-origin via the Vercel rewrite,
+# so CORS mainly matters for local dev and any direct API access.)
+_default_origins = [
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:5174", "http://127.0.0.1:5174",
+    FRONTEND_URL,
+]
+_env_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+ALLOWED_ORIGINS = sorted(set(_default_origins + _env_origins))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token"],
 )
+
+# Mount feature routers (all auth-gated; auth router under /api/auth).
+app.include_router(auth_router.router)
+app.include_router(accounts_router.router)
+app.include_router(history_router.router)
+app.include_router(scheduler_router.router)
 
 settings = get_settings()
 BASE = settings.API_BASE_URL
@@ -41,6 +88,8 @@ JSON_H = {"Accept": "application/json", "Content-Type": "application/json"}
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class AccountData(BaseModel):
+    """Internal representation — decrypted creds loaded from the DB, never from
+    the client. The request models below reference accounts by id only."""
     client_id: int
     username: str
     password: str
@@ -49,21 +98,21 @@ class AccountData(BaseModel):
     label: Optional[str] = None
     group: Optional[str] = None
 
-class AccountsBody(BaseModel):
-    accounts: List[AccountData]
+class AccountSelect(BaseModel):
+    # None => operate on all of the user's accounts.
+    account_ids: Optional[List[int]] = None
 
 class ApplyRequest(BaseModel):
-    accounts: List[AccountData]
     company_id: int
     kitta: int
+    account_ids: Optional[List[int]] = None
 
 class MultiAllocation(BaseModel):
-    account_idx: int
+    account_id: int
     company_id: int
     kitta: int
 
 class MultiApplyRequest(BaseModel):
-    accounts: List[AccountData]
     allocations: List[MultiAllocation]
 
 
@@ -72,6 +121,31 @@ class MultiApplyRequest(BaseModel):
 def make_user(acc: AccountData) -> User:
     return User(client_id=acc.client_id, username=acc.username,
                 password=acc.password, crn=acc.crn, pin=acc.pin)
+
+
+def _load_accounts(current_user: DBUser, db: Session,
+                   account_ids: Optional[List[int]] = None) -> List[AccountData]:
+    """Load the logged-in user's MeroShare accounts (decrypted) from the DB.
+
+    Credentials never come from the client — only an optional list of account
+    ids to filter by. Returns AccountData usable by the existing helpers.
+    """
+    accs = get_decrypted_accounts(current_user, db)
+    if account_ids:
+        wanted = set(account_ids)
+        accs = [a for a in accs if a["id"] in wanted]
+    out: List[AccountData] = []
+    for a in accs:
+        try:
+            pin = int(str(a["pin"]).strip())
+        except (ValueError, TypeError):
+            pin = 0
+        out.append(AccountData(
+            client_id=a["client_id"], username=a["username"],
+            password=a["password"], crn=a["crn"], pin=pin,
+            label=a.get("label"), group=a.get("group_name"),
+        ))
+    return out
 
 
 def auth(acc: AccountData) -> Optional[str]:
@@ -203,11 +277,14 @@ def _fetch_account_portfolio(acc: AccountData) -> dict:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/snapshot")
-def get_snapshot(req: AccountsBody):
+def get_snapshot(body: AccountSelect = AccountSelect(),
+                 current_user: DBUser = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
     """Parallel fetch ownDetail — capped to 2 concurrent to avoid MeroShare auth rate-limit"""
+    accounts = _load_accounts(current_user, db, body.account_ids)
     results = []
     with ThreadPoolExecutor(max_workers=2) as ex:
-        futures = {ex.submit(_fetch_account_snapshot, acc): acc for acc in req.accounts}
+        futures = {ex.submit(_fetch_account_snapshot, acc): acc for acc in accounts}
         for f in as_completed(futures):
             results.append(f.result())
     results.sort(key=lambda x: x.get("username", ""))
@@ -222,11 +299,14 @@ def get_snapshot(req: AccountsBody):
 
 
 @app.post("/api/portfolio/aggregate")
-def get_portfolio_aggregate(req: AccountsBody):
+def get_portfolio_aggregate(body: AccountSelect = AccountSelect(),
+                            current_user: DBUser = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
     """Parallel fetch portfolio — capped to 2 concurrent to avoid MeroShare auth rate-limit"""
+    accounts = _load_accounts(current_user, db, body.account_ids)
     results = []
     with ThreadPoolExecutor(max_workers=2) as ex:
-        futures = {ex.submit(_fetch_account_portfolio, acc): acc for acc in req.accounts}
+        futures = {ex.submit(_fetch_account_portfolio, acc): acc for acc in accounts}
         for f in as_completed(futures):
             results.append(f.result())
     results.sort(key=lambda x: x.get("username", ""))
@@ -235,19 +315,25 @@ def get_portfolio_aggregate(req: AccountsBody):
 
 
 @app.post("/api/ipos")
-def get_ipos(req: AccountsBody):
-    if not req.accounts:
-        raise HTTPException(400, "No accounts provided")
+def get_ipos(body: AccountSelect = AccountSelect(),
+             current_user: DBUser = Depends(get_current_user),
+             db: Session = Depends(get_db)):
+    accounts = _load_accounts(current_user, db, body.account_ids)
+    if not accounts:
+        raise HTTPException(400, "No accounts configured")
     # Try each account in order until one authenticates successfully
     token = None
     failed_users = []
-    for acc in req.accounts:
+    for acc in accounts:
         token = auth(acc)
         if token:
             break
         failed_users.append(acc.username)
     if not token:
-        raise HTTPException(401, f"Authentication failed for all accounts: {', '.join(failed_users)}")
+        # 502, NOT 401 — this is an UPSTREAM (MeroShare) auth failure, not an
+        # expired Hissa session. A 401 here would make the frontend think the
+        # user's session died and log them out.
+        raise HTTPException(502, f"MeroShare authentication failed for all accounts: {', '.join(failed_users)}")
     ipo_payload = {
         "filterFieldParams": [
             {"key": "companyIssue.companyISIN.script", "alias": "Scrip"},
@@ -283,21 +369,40 @@ def get_ipos(req: AccountsBody):
 
 
 @app.post("/api/apply/multi")
-async def apply_multi(req: MultiApplyRequest):
+async def apply_multi(req: MultiApplyRequest,
+                      current_user: DBUser = Depends(get_current_user),
+                      db: Session = Depends(get_db),
+                      _csrf: None = Depends(require_csrf)):
     """Stream multi-IPO × multi-account allocation results"""
+    # Map account_id -> decrypted account so allocations can reference accounts by id.
+    decrypted = {a["id"]: a for a in get_decrypted_accounts(current_user, db)}
+
+    def _acc_data(account_id: int) -> Optional[AccountData]:
+        a = decrypted.get(account_id)
+        if not a:
+            return None
+        try:
+            pin = int(str(a["pin"]).strip())
+        except (ValueError, TypeError):
+            pin = 0
+        return AccountData(client_id=a["client_id"], username=a["username"],
+                           password=a["password"], crn=a["crn"], pin=pin,
+                           label=a.get("label"), group=a.get("group_name"))
+
     loop = asyncio.get_event_loop()
 
     async def generate():
         total = len(req.allocations)
         yield json.dumps({"type": "start", "total": total}) + "\n"
         for i, alloc in enumerate(req.allocations):
-            if alloc.account_idx >= len(req.accounts):
+            acc = _acc_data(alloc.account_id)
+            if acc is None:
                 yield json.dumps({"type": "progress", "index": i, "total": total,
                     "result": {"user_name": "?", "status": "failed",
-                               "error_message": "Invalid account index",
+                               "error_message": "Account not found",
                                "company_id": alloc.company_id, "kitta_amount": alloc.kitta}}) + "\n"
                 continue
-            user = make_user(req.accounts[alloc.account_idx])
+            user = make_user(acc)
             result = await loop.run_in_executor(None, apply_single, user, alloc.company_id, alloc.kitta)
             result["company_id"] = alloc.company_id
             yield json.dumps({"type": "progress", "index": i, "total": total, "result": result}) + "\n"
@@ -309,8 +414,12 @@ async def apply_multi(req: MultiApplyRequest):
 
 # kept for backward compat
 @app.post("/api/apply")
-async def apply_bulk(req: ApplyRequest):
-    users = [make_user(acc) for acc in req.accounts]
+async def apply_bulk(req: ApplyRequest,
+                     current_user: DBUser = Depends(get_current_user),
+                     db: Session = Depends(get_db),
+                     _csrf: None = Depends(require_csrf)):
+    accounts = _load_accounts(current_user, db, req.account_ids)
+    users = [make_user(acc) for acc in accounts]
     loop = asyncio.get_event_loop()
 
     async def generate():
@@ -403,11 +512,14 @@ def _fetch_account_reports(acc: AccountData) -> dict:
 
 
 @app.post("/api/reports")
-def get_reports(req: AccountsBody):
+def get_reports(body: AccountSelect = AccountSelect(),
+                current_user: DBUser = Depends(get_current_user),
+                db: Session = Depends(get_db)):
     """Serial fetch application reports — MeroShare rate-limits concurrent auths."""
     import time
+    accounts = _load_accounts(current_user, db, body.account_ids)
     results = []
-    for acc in req.accounts:
+    for acc in accounts:
         results.append(_fetch_account_reports(acc))
         time.sleep(0.3)  # small gap to avoid rate limiting
     results.sort(key=lambda x: x.get("username", ""))

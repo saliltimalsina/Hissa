@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://accordingly-lowest-realtor-exclude.trycloudflare.com/api/:path*"
+      "destination": "https://hissa-api.fly.dev/api/:path*"
     },
     {
       "source": "/((?!api/).*)",

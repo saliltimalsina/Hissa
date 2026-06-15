@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from src.db.database import get_db
 from src.db.models import User, ApplicationHistory
 from src.auth.jwt_handler import get_current_user
+from src.auth.session import require_csrf
 
 router = APIRouter(prefix="/api/history", tags=["history"])
 
@@ -93,6 +94,7 @@ def get_applied_ipos(
 def clear_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(require_csrf),
 ):
     db.query(ApplicationHistory).filter(ApplicationHistory.user_id == current_user.id).delete()
     db.commit()

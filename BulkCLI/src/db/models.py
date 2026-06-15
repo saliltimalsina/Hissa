@@ -54,6 +54,19 @@ class ApplicationHistory(Base):
     owner = relationship("User", back_populates="history")
 
 
+class PasswordReset(Base):
+    __tablename__ = "password_resets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, nullable=False, index=True)  # sha256 of the raw token
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User")
+
+
 class SchedulerRule(Base):
     __tablename__ = "scheduler_rules"
 

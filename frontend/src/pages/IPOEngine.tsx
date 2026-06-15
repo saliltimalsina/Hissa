@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Account, IPO, ExecLog } from '../types';
+import { apiStream, parseNdjson } from '../lib/api';
 
 type Activity = { type: 'apply' | 'verify' | 'sync' | 'error'; status: 'success' | 'failed' | 'info'; message: string };
 
@@ -89,14 +90,15 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
 
   async function execute() {
     if (!selectedIpo) return;
-    const included = alloc.filter(r => r.included).map(r => r.account);
-    if (included.length === 0) return;
+    const includedAccounts = alloc.filter(r => r.included).map(r => r.account);
+    if (includedAccounts.length === 0) return;
+    const accountIds = includedAccounts.map(a => a.id);
 
     setExecuting(true);
     setExecDone(false);
     setLogs([]);
     setConsoleOpen(true);
-    setExecStats({ done: 0, total: included.length, success: 0, failed: 0 });
+    setExecStats({ done: 0, total: accountIds.length, success: 0, failed: 0 });
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -107,63 +109,42 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
     }
 
     try {
-      const res = await fetch('/api/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accounts: included, company_id: selectedIpo.companyShareId, kitta }),
+      // No credentials sent — the server applies using the selected account ids.
+      const res = await apiStream('/api/apply', {
+        body: { company_id: selectedIpo.companyShareId, kitta, account_ids: accountIds },
         signal: controller.signal,
       });
 
-      if (!res.ok || !res.body) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.detail || `HTTP ${res.status}`);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const ev = JSON.parse(line);
-            if (ev.type === 'start') {
-              setExecStats(s => ({ ...s, total: ev.total }));
-            } else if (ev.type === 'progress') {
-              const r = ev.result;
-              const status = r.status as 'success' | 'failed' | 'retrying' | 'pending';
-              const msg = r.error_message || (status === 'success' ? 'Applied successfully' : '');
-              addLog({
-                ts: new Date().toLocaleTimeString('en-US', { hour12: false }),
-                username: r.user_name,
-                status,
-                message: msg,
-              });
-              if (status === 'success' || status === 'failed') {
-                onActivity({
-                  type: 'apply',
-                  status: status === 'success' ? 'success' : 'failed',
-                  message: `${selectedIpo?.companyName || 'IPO'} → ${r.user_name}: ${msg || status}`,
-                });
-              }
-              setExecStats(s => ({
-                ...s,
-                done: s.done + 1,
-                success: s.success + (status === 'success' ? 1 : 0),
-                failed: s.failed + (status === 'failed' ? 1 : 0),
-              }));
-            } else if (ev.type === 'complete') {
-              setExecDone(true);
-            }
-          } catch { /* skip */ }
+      await parseNdjson(res, (ev) => {
+        if (ev.type === 'start') {
+          setExecStats(s => ({ ...s, total: ev.total }));
+        } else if (ev.type === 'progress') {
+          const r = ev.result;
+          const status = r.status as 'success' | 'failed' | 'retrying' | 'pending';
+          const msg = r.error_message || (status === 'success' ? 'Applied successfully' : '');
+          addLog({
+            ts: new Date().toLocaleTimeString('en-US', { hour12: false }),
+            username: r.user_name,
+            status,
+            message: msg,
+          });
+          if (status === 'success' || status === 'failed') {
+            onActivity({
+              type: 'apply',
+              status: status === 'success' ? 'success' : 'failed',
+              message: `${selectedIpo?.companyName || 'IPO'} → ${r.user_name}: ${msg || status}`,
+            });
+          }
+          setExecStats(s => ({
+            ...s,
+            done: s.done + 1,
+            success: s.success + (status === 'success' ? 1 : 0),
+            failed: s.failed + (status === 'failed' ? 1 : 0),
+          }));
+        } else if (ev.type === 'complete') {
+          setExecDone(true);
         }
-      }
+      });
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         addLog({ ts: new Date().toLocaleTimeString(), username: 'system', status: 'failed', message: e.message });
@@ -407,7 +388,7 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
                             {row.account.label || `Account ${i + 1}`}
                           </td>
                           <td className="px-2 py-2.5 text-[#6b7280]">
-                            {row.account.group || '—'}
+                            {row.account.group_name || '—'}
                           </td>
                           <td className="px-2 py-2.5 text-[#374151] tabular">{row.account.username}</td>
                           <td className="px-2 py-2.5 text-right tabular text-[#374151]">{kitta}</td>
