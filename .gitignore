@@ -46,3 +46,4 @@ BulkCLI/**/__pycache__/
 BulkCLI/data/*.db
 *.sqlite
 *.sqlite3
+.vercel
