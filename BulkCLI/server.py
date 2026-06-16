@@ -3,6 +3,7 @@
 
 import sys
 import json
+import logging
 import asyncio
 from pathlib import Path
 from typing import List, Optional
@@ -15,7 +16,7 @@ import requests as req_lib
 from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, conlist
 from sqlalchemy.orm import Session
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -74,6 +75,19 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-CSRF-Token"],
 )
 
+
+# Security response headers applied to every response (HSTS, sniffing,
+# clickjacking, referrer leakage).
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 # Mount feature routers (all auth-gated; auth router under /api/auth).
 app.include_router(auth_router.router)
 app.include_router(accounts_router.router)
@@ -83,6 +97,20 @@ app.include_router(scheduler_router.router)
 settings = get_settings()
 BASE = settings.API_BASE_URL
 JSON_H = {"Accept": "application/json", "Content-Type": "application/json"}
+
+logger = logging.getLogger(__name__)
+# Verbose diagnostics (raw upstream bodies / sample values) are gated behind this
+# flag, which defaults OFF so they never reach stdout in production.
+DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
+
+# Broker list is static — load capitals.json once at import rather than reading
+# it from disk on every /api/brokers request (incl. the frequent healthcheck).
+try:
+    with open(Path(__file__).parent / "capitals.json") as _f:
+        _BROKERS = json.load(_f)
+except Exception:
+    logger.warning("Failed to load capitals.json", exc_info=True)
+    _BROKERS = []
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -113,7 +141,8 @@ class MultiAllocation(BaseModel):
     kitta: int
 
 class MultiApplyRequest(BaseModel):
-    allocations: List[MultiAllocation]
+    # Bounded: apply_multi does a MeroShare round-trip per allocation.
+    allocations: conlist(MultiAllocation, max_length=200)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -157,7 +186,8 @@ def auth(acc: AccountData) -> Optional[str]:
         print(f"[AUTH] {acc.username} EXCEPTION: {e}", flush=True)
         return None
     if r.status_code != 200:
-        print(f"[AUTH] {acc.username} HTTP {r.status_code}: {r.text[:150]}", flush=True)
+        if DEBUG:
+            print(f"[AUTH] {acc.username} HTTP {r.status_code}: {r.text[:150]}", flush=True)
         return None
     return r.headers.get("Authorization", "").strip() or None
 
@@ -194,7 +224,8 @@ def apply_single(user: User, company_id: int, kitta: int) -> dict:
             app_data["transactionPIN"] = str(app_data["transactionPIN"])
         print(f"[APPLY] {user.username} → company {company_id}, kitta {kitta}", flush=True)
         r = req_lib.post(apply_url, json=app_data, headers=h, timeout=15)
-        print(f"[APPLY] {user.username} ← HTTP {r.status_code}: {r.text[:300]}", flush=True)
+        if DEBUG:
+            print(f"[APPLY] {user.username} ← HTTP {r.status_code}: {r.text[:300]}", flush=True)
         body = {}
         try:
             body = r.json() if isinstance(r.json(), dict) else (r.json()[0] if r.json() else {})
@@ -205,7 +236,12 @@ def apply_single(user: User, company_id: int, kitta: int) -> dict:
         if r.status_code in (200, 201) or any(s in msg for s in success_signals):
             application.mark_success()
         else:
-            err_msg = body.get("message") or body.get("errorMessage") or body.get("error") or f"HTTP {r.status_code}: {r.text[:200]}"
+            # Raw upstream body may contain internal/PII details — log it
+            # server-side only and surface a generic message to the client.
+            logger.warning("[APPLY] %s failed: HTTP %s: %s",
+                           user.username, r.status_code, r.text[:300])
+            err_msg = (body.get("message") or body.get("errorMessage")
+                       or body.get("error") or "Application failed")
             application.mark_failed(err_msg)
     except Exception as e:
         application.mark_failed(str(e))
@@ -436,9 +472,7 @@ async def apply_bulk(req: ApplyRequest,
 
 @app.get("/api/brokers")
 def get_brokers():
-    capitals_path = Path(__file__).parent / "capitals.json"
-    with open(capitals_path) as f:
-        return json.load(f)
+    return _BROKERS
 
 
 def _fetch_account_reports(acc: AccountData) -> dict:
@@ -459,9 +493,13 @@ def _fetch_account_reports(acc: AccountData) -> dict:
         }
         r = req_lib.post(f"{BASE}/meroShare/applicantForm/active/search/",
             json=payload, headers=h, timeout=15)
-        print(f"[REPORTS] {acc.username} ← HTTP {r.status_code}", flush=True)
+        if DEBUG:
+            print(f"[REPORTS] {acc.username} ← HTTP {r.status_code}", flush=True)
         if r.status_code != 200:
-            return {**base, "error": f"HTTP {r.status_code}: {r.text[:120]}", "applications": []}
+            # Log raw upstream body server-side; return a generic error.
+            logger.warning("[REPORTS] %s search failed: HTTP %s: %s",
+                           acc.username, r.status_code, r.text[:300])
+            return {**base, "error": "Failed to fetch reports", "applications": []}
         raw = r.json()
         if isinstance(raw, dict):
             apps = raw.get("object") or raw.get("data") or raw.get("result") or []
@@ -469,10 +507,11 @@ def _fetch_account_reports(acc: AccountData) -> dict:
             apps = raw
         else:
             apps = []
-        print(f"[REPORTS] {acc.username} response top keys: {list(raw.keys()) if isinstance(raw, dict) else type(raw).__name__}, apps={len(apps)}", flush=True)
-        if apps:
-            print(f"[REPORTS] {acc.username} sample app keys: {list(apps[0].keys())[:35]}", flush=True)
-            print(f"[REPORTS] {acc.username} sample app values: {dict(list(apps[0].items())[:10])}", flush=True)
+        if DEBUG:
+            print(f"[REPORTS] {acc.username} response top keys: {list(raw.keys()) if isinstance(raw, dict) else type(raw).__name__}, apps={len(apps)}", flush=True)
+            if apps:
+                print(f"[REPORTS] {acc.username} sample app keys: {list(apps[0].keys())[:35]}", flush=True)
+                print(f"[REPORTS] {acc.username} sample app values: {dict(list(apps[0].items())[:10])}", flush=True)
         # Fetch detail per application to get full status, remarks, block amount, transaction amount
         for a in apps[:25]:  # cap to recent 25
             fid = a.get("applicantFormId")

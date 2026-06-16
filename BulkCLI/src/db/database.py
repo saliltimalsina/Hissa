@@ -10,7 +10,13 @@ if DATABASE_URL:
     # Render ships postgres:// — SQLAlchemy 2.x needs postgresql://
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    # SEC-10: enforce TLS for Postgres (DB holds encrypted MeroShare creds +
+    # password hashes). Only inject sslmode if the URL doesn't already set it,
+    # to avoid conflicting with an explicit value in the connection string.
+    connect_args = {}
+    if "sslmode" not in DATABASE_URL:
+        connect_args["sslmode"] = "require"
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
 else:
     DB_PATH = Path(__file__).parent.parent.parent / "data" / "ncap.db"
     DB_PATH.parent.mkdir(exist_ok=True)
