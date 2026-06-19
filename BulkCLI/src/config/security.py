@@ -58,7 +58,10 @@ COOKIE_SECURE = IS_PROD
 COOKIE_SAMESITE = "strict"
 
 # Session + reset lifetimes.
-JWT_EXPIRE_DAYS = int(os.environ.get("JWT_EXPIRE_DAYS", "7"))
+# SEC-09: shortened the default session window from 7 to 3 days. Logout/reset
+# now revoke server-side (SEC-03), so a shorter ceiling is a cheap, safe win and
+# is not a sliding session (no refresh logic added). Overridable via env.
+JWT_EXPIRE_DAYS = int(os.environ.get("JWT_EXPIRE_DAYS", "3"))
 RESET_TOKEN_TTL_MINUTES = int(os.environ.get("RESET_TOKEN_TTL_MINUTES", "60"))
 
 # Public URL of the frontend, used to build password-reset links.

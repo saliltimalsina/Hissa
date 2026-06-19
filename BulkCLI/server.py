@@ -31,7 +31,7 @@ from src.models.user import User
 from src.models.ipo_application import IPOApplication
 from src.services.application_service import ApplicationService
 from src.config.settings import get_settings
-from src.config.security import FRONTEND_URL
+from src.config.security import FRONTEND_URL, IS_PROD
 from src.config.ratelimit import limiter
 from src.db.database import get_db
 from src.db.models import User as DBUser
@@ -76,13 +76,20 @@ app.add_middleware(SlowAPIMiddleware)
 # Allowed CORS origins: env-driven, defaulting to local dev + the prod frontend.
 # (In production the frontend and API are same-origin via the Vercel rewrite,
 # so CORS mainly matters for local dev and any direct API access.)
-_default_origins = [
+# SEC-07: with allow_credentials=True we MUST send an explicit origin list (never
+# "*"). Localhost/127.0.0.1 dev origins are included only in dev; in prod they are
+# excluded so a malicious page served from localhost can't ride a user's cookies.
+_dev_origins = [
     "http://localhost:5173", "http://127.0.0.1:5173",
     "http://localhost:5174", "http://127.0.0.1:5174",
-    FRONTEND_URL,
 ]
+_prod_origins = [FRONTEND_URL]
 _env_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
-ALLOWED_ORIGINS = sorted(set(_default_origins + _env_origins))
+if IS_PROD:
+    _base_origins = _prod_origins
+else:
+    _base_origins = _dev_origins + _prod_origins
+ALLOWED_ORIGINS = sorted(set(_base_origins + _env_origins))
 
 app.add_middleware(
     CORSMiddleware,

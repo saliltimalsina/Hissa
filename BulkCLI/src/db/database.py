@@ -55,3 +55,32 @@ def init_db():
         User, MSAccount, ApplicationHistory, SchedulerRule, PasswordReset,
     )
     Base.metadata.create_all(bind=engine)
+    migrate()
+
+
+# Columns added after the production `users` table already existed. create_all
+# never ALTERs an existing table, so these must be applied explicitly. Postgres
+# supports "ADD COLUMN IF NOT EXISTS", making this fully idempotent.
+_USERS_MIGRATIONS = (
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP NULL',
+)
+
+
+def migrate():
+    """Idempotent, Postgres-safe column adds for tables that predate new models.
+
+    No-op on SQLite (it lacks "ADD COLUMN IF NOT EXISTS"; fresh SQLite DBs already
+    get the columns via create_all). Wrapped so a failure never crashes startup.
+    """
+    if engine.dialect.name != "postgresql":
+        return
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            for stmt in _USERS_MIGRATIONS:
+                conn.execute(text(stmt))
+    except Exception:
+        import sys, traceback
+        traceback.print_exc(file=sys.stderr)
