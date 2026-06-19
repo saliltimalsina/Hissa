@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { Search } from 'lucide-react';
 import type { Account, AccountReport, ReportApplication } from '../types';
+import { Icon, Spinner } from '../components/ui';
 
 interface Props {
   accounts: Account[];
@@ -44,11 +46,11 @@ function isNotAllotted(s: ReportApplication): boolean {
 
 const STATUS_PILL = (s: ReportApplication): { bg: string; text: string; label: string } => {
   const status = (s.statusName || '').toLowerCase();
-  if (isNotAllotted(s)) return { bg: 'bg-[#FEE7E7]', text: 'text-[#B91C1C]', label: 'Not Allotted' };
-  if (isAllotted(s)) return { bg: 'bg-[#EAFBF1]', text: 'text-[#1F9D55]', label: 'Allotted' };
-  if (status.includes('pending') || status.includes('completed')) return { bg: 'bg-[#FEF6E0]', text: 'text-[#92400E]', label: s.statusName || 'Pending' };
-  if (status.includes('edit')) return { bg: 'bg-[#F4F3FF]', text: 'text-[#5B4DFF]', label: s.statusName || 'Editable' };
-  return { bg: 'bg-[#F4F4F8]', text: 'text-[#6B7280]', label: s.statusName || '—' };
+  if (isNotAllotted(s)) return { bg: 'bg-danger-bg', text: 'text-danger-fg', label: 'Not Allotted' };
+  if (isAllotted(s)) return { bg: 'bg-success-bg', text: 'text-success', label: 'Allotted' };
+  if (status.includes('pending') || status.includes('completed')) return { bg: 'bg-warn-bg', text: 'text-warn-fg', label: s.statusName || 'Pending' };
+  if (status.includes('edit')) return { bg: 'bg-brand-tint', text: 'text-brand', label: s.statusName || 'Editable' };
+  return { bg: 'bg-line-soft', text: 'text-muted', label: s.statusName || '—' };
 };
 
 export default function Reports({ accounts, reports, loading, error, onRefresh, fetchedAt }: Props) {
@@ -113,70 +115,70 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
   }
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl">
+    <div className="p-4 sm:p-8 space-y-6 max-w-7xl">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#111827] tracking-tight">Reports</h1>
-          <p className="text-sm text-[#6B7280] mt-1">IPO application history and allotment results</p>
+          <h1 className="text-display text-ink">Reports</h1>
+          <p className="text-sm text-muted mt-1">IPO application history and allotment results</p>
         </div>
         {loading ? (
-          <span className="flex items-center gap-1.5 text-xs text-[#6B7280]">
-            <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>
+          <span className="flex items-center gap-1.5 text-xs text-muted">
+            <Spinner size="sm" />
             Updating
           </span>
         ) : fetchedAt ? (
-          <button onClick={onRefresh} className="text-xs text-[#6B7280] hover:text-[#5B4DFF] transition-colors">
+          <button onClick={onRefresh} className="text-xs text-muted hover:text-brand transition-colors">
             Updated {timeAgo(fetchedAt)}
           </button>
         ) : null}
       </div>
 
       {error && (
-        <div className="px-4 py-3 bg-[#FEE7E7] border border-[#fbd4d4] rounded-lg text-sm text-[#B91C1C]">
+        <div className="px-4 py-3 bg-danger-bg border border-danger/30 rounded-lg text-sm text-danger-fg">
           {error}
         </div>
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Total Applications</p>
-          <p className="text-[28px] font-bold text-[#111827] tabular leading-none tracking-tight">{totalApplications}</p>
-          <p className="text-xs text-[#9CA3AF] mt-2.5 font-medium">{accounts.length} accounts</p>
+          <p className="text-overline text-muted mb-3">Total Applications</p>
+          <p className="text-metric text-ink">{totalApplications}</p>
+          <p className="text-xs text-faint mt-2.5 font-medium">{accounts.length} accounts</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Allotted</p>
-          <p className="text-[28px] font-bold text-[#1F9D55] tabular leading-none tracking-tight">{allotted}</p>
-          <p className="text-xs text-[#1F9D55] mt-2.5 font-medium">{totalApplications > 0 ? Math.round((allotted / totalApplications) * 100) : 0}% hit rate</p>
+          <p className="text-overline text-muted mb-3">Allotted</p>
+          <p className="text-metric text-success">{allotted}</p>
+          <p className="text-xs text-success mt-2.5 font-medium">{totalApplications > 0 ? Math.round((allotted / totalApplications) * 100) : 0}% hit rate</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Not Allotted</p>
-          <p className="text-[28px] font-bold text-[#B91C1C] tabular leading-none tracking-tight">{notAllotted}</p>
-          <p className="text-xs text-[#B91C1C] mt-2.5 font-medium">Amount released</p>
+          <p className="text-overline text-muted mb-3">Not Allotted</p>
+          <p className="text-metric text-danger-fg">{notAllotted}</p>
+          <p className="text-xs text-danger-fg mt-2.5 font-medium">Amount released</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Pending / Active</p>
-          <p className="text-[28px] font-bold text-[#92400E] tabular leading-none tracking-tight">{pending}</p>
-          <p className="text-xs text-[#92400E] mt-2.5 font-medium">NPR {formatNPR(totalBlocked)} blocked</p>
+          <p className="text-overline text-muted mb-3">Pending / Active</p>
+          <p className="text-metric text-warn-fg">{pending}</p>
+          <p className="text-xs text-warn-fg mt-2.5 font-medium">NPR {formatNPR(totalBlocked)} blocked</p>
         </div>
       </div>
 
       {/* View toggle */}
-      <div className="flex items-center gap-1 bg-white border border-[#ECECF2] rounded-lg p-1 w-fit">
-        <button onClick={() => setView('all')} className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'all' ? 'bg-[#5B4DFF] text-white' : 'text-[#6B7280] hover:text-[#111827]'}`}>
+      <div className="flex items-center gap-1 bg-white border border-line rounded-lg p-1 w-fit">
+        <button onClick={() => setView('all')} className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'all' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}>
           All Accounts
         </button>
-        <button onClick={() => setView('account')} className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'account' ? 'bg-[#5B4DFF] text-white' : 'text-[#6B7280] hover:text-[#111827]'}`}>
+        <button onClick={() => setView('account')} className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'account' ? 'bg-brand text-white' : 'text-muted hover:text-ink'}`}>
           By Account
         </button>
       </div>
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-        <div className="px-5 py-3 border-b border-[#F4F4F8] flex items-center gap-3">
+        <div className="px-5 py-3 border-b border-line-soft flex items-center gap-3">
           {/* Filter pills */}
-          <div className="flex items-center gap-1 bg-[#F7F8FC] rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-surface rounded-lg p-1">
             {([
               { id: 'all', label: 'All', count: totalApplications },
               { id: 'alloted', label: 'Allotted', count: allotted },
@@ -188,25 +190,23 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
                 onClick={() => setFilter(f.id)}
                 className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
                   filter === f.id
-                    ? 'bg-white text-[#111827] shadow-[0_1px_2px_rgba(0,0,0,0.05)]'
-                    : 'text-[#6B7280] hover:text-[#111827]'
+                    ? 'bg-white text-ink shadow-[0_1px_2px_rgba(0,0,0,0.05)]'
+                    : 'text-muted hover:text-ink'
                 }`}
               >
-                {f.label} <span className="text-[#9CA3AF] font-medium">{f.count}</span>
+                {f.label} <span className="text-faint font-medium">{f.count}</span>
               </button>
             ))}
           </div>
 
           {/* Search */}
           <div className="flex-1 relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+            <Icon icon={Search} size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search company, scrip, account..."
-              className="w-full bg-[#F7F8FC] border border-transparent rounded-lg pl-9 pr-3 py-1.5 text-sm text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#5B4DFF] focus:bg-white"
+              className="w-full bg-surface border border-transparent rounded-lg pl-9 pr-3 py-1.5 text-sm text-ink placeholder-faint focus:outline-none focus:border-brand focus:bg-white"
             />
           </div>
         </div>
@@ -215,16 +215,16 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
         <div className="overflow-x-auto">
           {flat.length === 0 && !loading ? (
             <div className="px-6 py-16 text-center">
-              <p className="text-sm text-[#6B7280]">No application history yet</p>
-              <p className="text-xs text-[#9CA3AF] mt-1">Apply for an IPO to see results here</p>
+              <p className="text-sm text-muted">No application history yet</p>
+              <p className="text-xs text-faint mt-1">Apply for an IPO to see results here</p>
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-6 py-16 text-center">
-              <p className="text-sm text-[#6B7280]">No matching applications</p>
+              <p className="text-sm text-muted">No matching applications</p>
             </div>
           ) : view === 'account' ? (
             <div className="flex min-h-[400px]">
-              <div className="w-56 flex-shrink-0 border-r border-[#F4F4F8]">
+              <div className="w-56 flex-shrink-0 border-r border-line-soft">
                 {reports.map(r => {
                   const acctApps = filtered.filter(f => f.accountUsername === r.username);
                   const acctAllotted = acctApps.filter(isAllotted).length;
@@ -232,16 +232,16 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
                     <button
                       key={r.username}
                       onClick={() => setSelectedAccount(r.username)}
-                      className={`w-full text-left px-4 py-3 border-b border-[#F4F4F8] transition-colors ${
-                        selectedAccount === r.username ? 'bg-[#F4F3FF] border-l-2 border-l-[#5B4DFF]' : 'hover:bg-[#FAFAFF]'
+                      className={`w-full text-left px-4 py-3 border-b border-line-soft transition-colors ${
+                        selectedAccount === r.username ? 'bg-brand-tint border-l-2 border-l-brand' : 'hover:bg-brand-subtle'
                       }`}
                     >
-                      <p className="text-sm font-semibold text-[#111827] truncate">{r.label}</p>
-                      <p className="text-[11px] text-[#9CA3AF] mt-0.5 tabular">{r.username}</p>
+                      <p className="text-sm font-semibold text-ink truncate">{r.label}</p>
+                      <p className="text-[11px] text-faint mt-0.5 tabular">{r.username}</p>
                       <div className="flex items-center gap-2 mt-1.5 text-[10px]">
-                        <span className="text-[#6B7280]">{acctApps.length} apps</span>
-                        {acctAllotted > 0 && <span className="text-[#1F9D55] font-semibold">· {acctAllotted} won</span>}
-                        {r.error && <span className="text-[#B91C1C]">· error</span>}
+                        <span className="text-muted">{acctApps.length} apps</span>
+                        {acctAllotted > 0 && <span className="text-success font-semibold">· {acctAllotted} won</span>}
+                        {r.error && <span className="text-danger-fg">· error</span>}
                       </div>
                     </button>
                   );
@@ -253,14 +253,14 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
                   if (acctApps.length === 0) {
                     return (
                       <div className="px-6 py-16 text-center">
-                        <p className="text-sm text-[#6B7280]">No applications for this account</p>
+                        <p className="text-sm text-muted">No applications for this account</p>
                       </div>
                     );
                   }
                   return (
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="text-[#6B7280] bg-[#F7F8FC]">
+                        <tr className="text-muted bg-surface">
                           <th className="px-5 py-3 text-left font-semibold text-xs uppercase tracking-wider">Company</th>
                           <th className="px-3 py-3 text-right font-semibold text-xs uppercase tracking-wider">Kitta</th>
                           <th className="px-3 py-3 text-right font-semibold text-xs uppercase tracking-wider">Amount</th>
@@ -273,18 +273,18 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
                         {acctApps.map((r, i) => {
                           const pill = STATUS_PILL(r);
                           return (
-                            <tr key={i} className="border-b border-[#F4F4F8] hover:bg-[#FAFAFF] transition-colors">
+                            <tr key={i} className="border-b border-line-soft hover:bg-brand-subtle transition-colors">
                               <td className="px-5 py-3">
-                                <p className="font-semibold text-[#111827]">{r.companyName}</p>
-                                <p className="text-xs text-[#9CA3AF] mt-0.5 font-mono">{r.scrip} · {r.shareGroupName || r.shareTypeName}</p>
+                                <p className="font-semibold text-ink">{r.companyName}</p>
+                                <p className="text-xs text-faint mt-0.5 font-mono">{r.scrip} · {r.shareGroupName || r.shareTypeName}</p>
                               </td>
-                              <td className="px-3 py-3 text-right tabular text-[#111827] font-medium">
+                              <td className="px-3 py-3 text-right tabular text-ink font-medium">
                                 {r.appliedKitta || '—'}
                                 {r.allotedQuantity !== undefined && r.allotedQuantity !== null && (r.allotedQuantity ?? 0) > 0 && (
-                                  <p className="text-[11px] text-[#1F9D55] font-semibold mt-0.5">+{r.allotedQuantity} alloted</p>
+                                  <p className="text-[11px] text-success font-semibold mt-0.5">+{r.allotedQuantity} alloted</p>
                                 )}
                               </td>
-                              <td className="px-3 py-3 text-right tabular text-[#111827]">
+                              <td className="px-3 py-3 text-right tabular text-ink">
                                 {r.transactionAmount ? `${formatNPR(r.transactionAmount)}` : '—'}
                               </td>
                               <td className="px-3 py-3">
@@ -292,8 +292,8 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
                                   {pill.label}
                                 </span>
                               </td>
-                              <td className="px-3 py-3 text-xs text-[#6B7280]">{r.blockAmountStatus || '—'}</td>
-                              <td className="px-5 py-3 text-xs text-[#6B7280] max-w-xs">
+                              <td className="px-3 py-3 text-xs text-muted">{r.blockAmountStatus || '—'}</td>
+                              <td className="px-5 py-3 text-xs text-muted max-w-xs">
                                 <p className="truncate" title={r.meroshareRemark || ''}>{r.meroshareRemark || '—'}</p>
                               </td>
                             </tr>
@@ -308,7 +308,7 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-[#6B7280] bg-[#F7F8FC]">
+                <tr className="text-muted bg-surface">
                   <th className="px-5 py-3 text-left font-semibold text-xs uppercase tracking-wider">Company</th>
                   <th className="px-3 py-3 text-left font-semibold text-xs uppercase tracking-wider">Account</th>
                   <th className="px-3 py-3 text-right font-semibold text-xs uppercase tracking-wider">Kitta</th>
@@ -322,22 +322,22 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
                 {filtered.map((r, i) => {
                   const pill = STATUS_PILL(r);
                   return (
-                    <tr key={i} className="border-b border-[#F4F4F8] hover:bg-[#FAFAFF] transition-colors">
+                    <tr key={i} className="border-b border-line-soft hover:bg-brand-subtle transition-colors">
                       <td className="px-5 py-3">
-                        <p className="font-semibold text-[#111827]">{r.companyName}</p>
-                        <p className="text-xs text-[#9CA3AF] mt-0.5 font-mono">{r.scrip} · {r.shareGroupName || r.shareTypeName}</p>
+                        <p className="font-semibold text-ink">{r.companyName}</p>
+                        <p className="text-xs text-faint mt-0.5 font-mono">{r.scrip} · {r.shareGroupName || r.shareTypeName}</p>
                       </td>
                       <td className="px-3 py-3">
-                        <p className="text-[#111827] font-medium text-xs">{r.accountLabel}</p>
-                        <p className="text-[11px] text-[#9CA3AF] mt-0.5 tabular">{r.accountUsername}</p>
+                        <p className="text-ink font-medium text-xs">{r.accountLabel}</p>
+                        <p className="text-[11px] text-faint mt-0.5 tabular">{r.accountUsername}</p>
                       </td>
-                      <td className="px-3 py-3 text-right tabular text-[#111827] font-medium">
+                      <td className="px-3 py-3 text-right tabular text-ink font-medium">
                         {r.appliedKitta || '—'}
                         {r.allotedQuantity !== undefined && r.allotedQuantity !== null && (r.allotedQuantity ?? 0) > 0 && (
-                          <p className="text-[11px] text-[#1F9D55] font-semibold mt-0.5">+{r.allotedQuantity} alloted</p>
+                          <p className="text-[11px] text-success font-semibold mt-0.5">+{r.allotedQuantity} alloted</p>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-right tabular text-[#111827]">
+                      <td className="px-3 py-3 text-right tabular text-ink">
                         {r.transactionAmount ? `${formatNPR(r.transactionAmount)}` : '—'}
                       </td>
                       <td className="px-3 py-3">
@@ -345,10 +345,10 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
                           {pill.label}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-xs text-[#6B7280]">
+                      <td className="px-3 py-3 text-xs text-muted">
                         {r.blockAmountStatus || '—'}
                       </td>
-                      <td className="px-5 py-3 text-xs text-[#6B7280] max-w-xs">
+                      <td className="px-5 py-3 text-xs text-muted max-w-xs">
                         <p className="truncate" title={r.meroshareRemark || ''}>{r.meroshareRemark || '—'}</p>
                       </td>
                     </tr>
@@ -363,12 +363,12 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
       {/* Per-account errors */}
       {reports.some(r => r.error) && (
         <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5">
-          <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider mb-3">Fetch Errors</p>
+          <p className="text-xs font-semibold text-faint uppercase tracking-wider mb-3">Fetch Errors</p>
           <div className="space-y-2">
             {reports.filter(r => r.error).map(r => (
               <div key={r.username} className="flex items-center justify-between text-xs">
-                <span className="text-[#111827] font-medium">{r.label}</span>
-                <span className="text-[#B91C1C]">{r.error}</span>
+                <span className="text-ink font-medium">{r.label}</span>
+                <span className="text-danger-fg">{r.error}</span>
               </div>
             ))}
           </div>

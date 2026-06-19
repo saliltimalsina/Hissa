@@ -17,6 +17,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
 import { useAuth } from './auth/useAuth';
+import { Spinner } from './components/ui';
 import { api, getHistory, getHistoryStats } from './lib/api';
 
 type AuthView = 'login' | 'signup' | 'forgot';
@@ -40,11 +41,8 @@ function AuthGate() {
 
 function LoadingScreen() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F7F8FC]">
-      <svg className="animate-spin h-6 w-6 text-[#5B4DFF]" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-      </svg>
+    <div className="min-h-screen flex items-center justify-center bg-surface text-brand">
+      <Spinner size="lg" label="Loading Hissa" />
     </div>
   );
 }
@@ -62,6 +60,8 @@ function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; use
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  // Off-canvas sidebar drawer (mobile/tablet). Always visible inline at lg+.
+  const [navOpen, setNavOpen] = useState(false);
 
   // Lifted state — shared across pages, persists across navigation
   const [ipos, setIpos] = useState<IPO[]>([]);
@@ -150,7 +150,9 @@ function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; use
   const refreshAccounts = useCallback(async () => {
     try {
       const data = await api<Account[]>('/api/accounts');
-      setAccounts(data);
+      // Guard against a non-array response (e.g. an error object) so a malformed
+      // payload can't crash downstream `.map`/`.filter` calls across the app.
+      setAccounts(Array.isArray(data) ? data : []);
       // Allow auto-load to refire after the set changes.
       setAutoLoadKey(k => k + 1);
     } catch (e) {
@@ -295,11 +297,14 @@ function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; use
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
+  const navigate = (p: Page) => { setPage(p); setNavOpen(false); };
+
   return (
-    <div className="flex flex-col h-screen bg-[#F7F8FC] text-[#111827] overflow-hidden select-none">
+    <div className="flex flex-col h-screen bg-surface text-ink overflow-hidden">
       <TopBar
         accounts={accounts}
         onOpenCmd={() => setCmdOpen(true)}
+        onOpenNav={() => setNavOpen(true)}
         notifications={unreadCount}
         onNavigate={setPage}
         snapshots={snapshots}
@@ -309,9 +314,9 @@ function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; use
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar current={page} onNavigate={setPage} />
+        <Sidebar current={page} onNavigate={navigate} open={navOpen} onClose={() => setNavOpen(false)} />
 
-        <main className="flex-1 overflow-auto select-text">
+        <main className="flex-1 overflow-auto">
           {page === 'overview' && <Overview accounts={accounts} onNavigate={setPage} snapshots={snapshots} ipos={ipos} portfolios={portfolios} portfoliosFetchedAt={portfoliosFetchedAt} iposFetchedAt={iposFetchedAt} activity={activity} historyStats={historyStats} />}
           {page === 'ipo-engine' && <IPOEngine accounts={accounts} ipos={ipos} loadingIpos={loadingIpos} ipoError={ipoError} onRefreshIpos={loadIpos} fetchedAt={iposFetchedAt} onActivity={pushActivity} />}
           {page === 'portfolio' && <Portfolio accounts={accounts} portfolios={portfolios} loading={loadingPortfolios} error={portfolioError} onRefresh={loadPortfolios} fetchedAt={portfoliosFetchedAt} />}

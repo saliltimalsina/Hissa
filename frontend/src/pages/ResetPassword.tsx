@@ -38,19 +38,19 @@ export default function ResetPassword() {
       title="Set a new password"
       subtitle={done ? undefined : 'Choose a new password for your account.'}
       footer={
-        <button onClick={goLogin} className="text-[#5B4DFF] font-semibold hover:underline">
+        <button onClick={goLogin} className="text-brand font-semibold hover:underline">
           Back to sign in
         </button>
       }
     >
       {done ? (
         <div className="space-y-4">
-          <div className="px-3 py-3 bg-[#EAFBF1] border border-[#1F9D55]/20 rounded-lg text-sm text-[#1F9D55]">
+          <div className="px-3 py-3 bg-success-bg border border-success/20 rounded-lg text-sm text-success">
             Your password has been reset.
           </div>
           <button
             onClick={goLogin}
-            className="w-full px-4 py-2.5 bg-[#5B4DFF] text-white rounded-lg text-sm font-semibold transition-opacity hover:opacity-90"
+            className="w-full px-4 py-2.5 bg-brand hover:bg-brand-hover text-white rounded-lg text-sm font-semibold transition-colors"
           >
             Go to sign in
           </button>
@@ -69,7 +69,7 @@ export default function ResetPassword() {
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
             />
-            <p className="text-[11px] text-[#9CA3AF] mt-1.5">At least 8 characters, with letters and numbers.</p>
+            <p className="text-[11px] text-faint mt-1.5">At least 8 characters, with letters and numbers.</p>
           </div>
           <ErrorBanner message={error} />
           <SubmitButton loading={loading}>Reset password</SubmitButton>

@@ -35,7 +35,7 @@ export default function Login({ onSignup, onForgot }: Props) {
       footer={
         <span>
           Don't have an account?{' '}
-          <button onClick={onSignup} className="text-[#5B4DFF] font-semibold hover:underline">
+          <button onClick={onSignup} className="text-brand font-semibold hover:underline">
             Create one
           </button>
         </span>
@@ -65,7 +65,7 @@ export default function Login({ onSignup, onForgot }: Props) {
             <button
               type="button"
               onClick={onForgot}
-              className="text-xs text-[#6B7280] hover:text-[#5B4DFF] transition-colors"
+              className="text-xs text-muted hover:text-brand transition-colors"
             >
               Forgot password?
             </button>

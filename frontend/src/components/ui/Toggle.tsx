@@ -31,8 +31,8 @@ export default function Toggle({
       aria-label={hideLabel ? label : undefined}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5B4DFF] ${
-        checked ? 'bg-[#5B4DFF]' : 'bg-[#D1D5DB]'
+      className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+        checked ? 'bg-brand' : 'bg-border'
       } ${className}`}
     >
       <span

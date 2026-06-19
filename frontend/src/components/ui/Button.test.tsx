@@ -12,7 +12,7 @@ describe('Button', () => {
   it('applies the variant class', () => {
     render(<Button variant="danger">Delete</Button>);
     const btn = screen.getByRole('button', { name: 'Delete' });
-    expect(btn.className).toContain('bg-[#EF4444]');
+    expect(btn.className).toContain('bg-danger');
   });
 
   it('disables and sets aria-busy while loading', () => {

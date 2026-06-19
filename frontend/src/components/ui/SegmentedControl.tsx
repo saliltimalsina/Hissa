@@ -33,7 +33,7 @@ export default function SegmentedControl<T extends string>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className={`inline-flex items-center gap-1 bg-[#F7F8FC] rounded-lg p-1 ${className}`}
+      className={`inline-flex items-center gap-1 bg-surface rounded-lg p-1 ${className}`}
     >
       {options.map((opt) => {
         const active = opt.value === value;
@@ -43,12 +43,12 @@ export default function SegmentedControl<T extends string>({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
-            className={`${pad} rounded-md font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5B4DFF] ${
-              active ? 'bg-white text-[#111827] shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'text-[#6B7280] hover:text-[#111827]'
+            className={`${pad} rounded-md font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+              active ? 'bg-white text-ink shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'text-muted hover:text-ink'
             }`}
           >
             {opt.label}
-            {opt.count !== undefined && <span className="ml-1 text-[#9CA3AF] font-medium">{opt.count}</span>}
+            {opt.count !== undefined && <span className="ml-1 text-faint font-medium">{opt.count}</span>}
           </button>
         );
       })}

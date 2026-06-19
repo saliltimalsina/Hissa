@@ -17,19 +17,19 @@ export interface StatusMeta {
 }
 
 const TONE_PILL: Record<StatusTone, string> = {
-  success: 'bg-[#EAFBF1] text-[#1F9D55]',
-  warn: 'bg-[#FEF6E0] text-[#92400E]',
-  danger: 'bg-[#FEE7E7] text-[#B91C1C]',
-  info: 'bg-[#F4F3FF] text-[#5B4DFF]',
-  neutral: 'bg-[#F4F4F8] text-[#6B7280]',
+  success: 'bg-success-bg text-success',
+  warn: 'bg-warn-bg text-warn-fg',
+  danger: 'bg-danger-bg text-danger-fg',
+  info: 'bg-info-bg text-info',
+  neutral: 'bg-line-soft text-muted',
 };
 
 const TONE_DOT: Record<StatusTone, string> = {
-  success: 'bg-[#1F9D55]',
-  warn: 'bg-[#F59E0B]',
-  danger: 'bg-[#EF4444]',
-  info: 'bg-[#5B4DFF]',
-  neutral: 'bg-[#9CA3AF]',
+  success: 'bg-success',
+  warn: 'bg-warn',
+  danger: 'bg-danger',
+  info: 'bg-info',
+  neutral: 'bg-faint',
 };
 
 // Canonical labels + tones for the statuses the app produces. Keys cover both

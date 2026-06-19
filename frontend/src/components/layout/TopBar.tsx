@@ -1,8 +1,12 @@
+import { Menu, Search, Bell } from 'lucide-react';
+import { Icon } from '../ui';
 import type { Account, AccountSnapshot, Page } from '../../types';
 
 interface Props {
   accounts: Account[];
   onOpenCmd: () => void;
+  /** Open the off-canvas nav drawer (below lg). */
+  onOpenNav: () => void;
   notifications: number;
   onNavigate: (page: Page) => void;
   snapshots: Record<string, AccountSnapshot>;
@@ -11,7 +15,7 @@ interface Props {
   onLogout: () => void;
 }
 
-export default function TopBar({ accounts, onOpenCmd, notifications, onNavigate, snapshots, userEmail, userName, onLogout }: Props) {
+export default function TopBar({ accounts, onOpenCmd, onOpenNav, notifications, onNavigate, snapshots, userEmail, userName, onLogout }: Props) {
   const issues = Object.values(snapshots).filter(s => ['auth_failed', 'expired', 'error'].includes(s.status));
   const expiring = Object.values(snapshots).filter(s => s.status === 'expiring');
   const verifiedCount = Object.keys(snapshots).length;
@@ -32,35 +36,42 @@ export default function TopBar({ accounts, onOpenCmd, notifications, onNavigate,
         : 'All healthy';
 
   const statusColor = hasIssues
-    ? { dot: 'bg-[#EF4444]', text: 'text-[#B91C1C]', bg: 'bg-[#FEE7E7]' }
+    ? { dot: 'bg-danger', text: 'text-danger-fg', bg: 'bg-danger-bg' }
     : hasWarnings
-      ? { dot: 'bg-[#F59E0B]', text: 'text-[#92400E]', bg: 'bg-[#FEF6E0]' }
+      ? { dot: 'bg-warn', text: 'text-warn-fg', bg: 'bg-warn-bg' }
       : allHealthy
-        ? { dot: 'bg-[#1F9D55]', text: 'text-[#1F9D55]', bg: 'bg-[#EAFBF1]' }
-        : { dot: 'bg-[#9CA3AF]', text: 'text-[#6B7280]', bg: 'bg-[#F4F4F8]' };
+        ? { dot: 'bg-success', text: 'text-success', bg: 'bg-success-bg' }
+        : { dot: 'bg-faint', text: 'text-muted', bg: 'bg-line-soft' };
 
   return (
-    <header className="h-12 flex-shrink-0 flex items-center justify-between px-5 bg-white border-b border-[#ECECF2] z-20">
+    <header className="h-12 flex-shrink-0 flex items-center justify-between gap-3 px-3 sm:px-5 bg-white border-b border-line z-20">
+      {/* Hamburger — opens the nav drawer below lg. */}
+      <button
+        onClick={onOpenNav}
+        aria-label="Open navigation"
+        className="lg:hidden p-1.5 text-muted hover:text-ink transition-colors"
+      >
+        <Icon icon={Menu} size={18} />
+      </button>
+
       {/* Center: command palette trigger */}
       <div className="flex-1 max-w-md">
         <button
           onClick={onOpenCmd}
-          className="flex items-center gap-2 px-3 py-1.5 bg-[#F7F8FC] border border-[#ECECF2] rounded-md text-xs text-[#9CA3AF] hover:border-[#D1D5DB] hover:text-[#6B7280] transition-colors w-full"
+          className="flex items-center gap-2 px-3 py-1.5 bg-surface border border-line rounded-md text-xs text-faint hover:border-border hover:text-muted transition-colors w-full"
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <span className="flex-1 text-left">Search accounts, IPOs, actions...</span>
-          <kbd className="text-[10px] bg-white border border-[#ECECF2] text-[#6B7280] rounded px-1.5 py-0.5 font-mono font-medium">⌘K</kbd>
+          <Icon icon={Search} size={14} strokeWidth={2} className="flex-shrink-0" />
+          <span className="flex-1 text-left truncate">Search accounts, IPOs, actions...</span>
+          <kbd className="hidden sm:block text-[10px] bg-white border border-line text-muted rounded px-1.5 py-0.5 font-mono font-medium">⌘K</kbd>
         </button>
       </div>
 
       {/* Right: status + actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* System health pill — clickable, routes to accounts */}
         <button
           onClick={() => onNavigate('accounts')}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${statusColor.bg} ${statusColor.text} hover:opacity-80 transition-opacity`}
+          className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${statusColor.bg} ${statusColor.text} hover:opacity-80 transition-opacity`}
           title="View account health"
         >
           <span className={`w-1.5 h-1.5 rounded-full ${statusColor.dot} ${allHealthy || hasIssues || hasWarnings ? 'animate-pulse' : ''}`} />
@@ -69,30 +80,29 @@ export default function TopBar({ accounts, onOpenCmd, notifications, onNavigate,
 
         <button
           onClick={() => onNavigate('notifications')}
-          className="relative p-1.5 text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
+          className="relative p-1.5 text-faint hover:text-muted transition-colors"
+          aria-label={`Notifications, ${notifications} unread`}
           title="View alerts"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-          </svg>
+          <Icon icon={Bell} size={16} strokeWidth={1.8} />
           {notifications > 0 && (
-            <span className="absolute top-0 right-0 w-4 h-4 bg-[#EF4444] rounded-full text-[9px] text-white flex items-center justify-center font-bold">
+            <span className="absolute top-0 right-0 w-4 h-4 bg-danger rounded-full text-[9px] text-white flex items-center justify-center font-bold">
               {notifications}
             </span>
           )}
         </button>
 
         {/* Divider */}
-        <span className="w-px h-5 bg-[#ECECF2]" />
+        <span className="w-px h-5 bg-line" />
 
         {/* User identity + logout */}
         <div className="flex items-center gap-2.5">
-          <span className="text-xs text-[#6B7280] max-w-[160px] truncate" title={userEmail}>
+          <span className="hidden md:block text-xs text-muted max-w-[160px] truncate" title={userEmail}>
             {userName || userEmail}
           </span>
           <button
             onClick={onLogout}
-            className="px-2.5 py-1 text-xs font-medium text-[#374151] border border-[#ECECF2] rounded-md hover:border-[#D1D5DB] hover:text-[#111827] transition-colors"
+            className="px-2.5 py-1 text-xs font-medium text-body border border-line rounded-md hover:border-border hover:text-ink transition-colors"
             title="Sign out"
           >
             Sign out

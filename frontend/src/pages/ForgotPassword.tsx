@@ -34,13 +34,13 @@ export default function ForgotPassword({ onLogin }: Props) {
       title="Reset your password"
       subtitle={sent ? undefined : 'Enter your email and we will send a reset link.'}
       footer={
-        <button onClick={onLogin} className="text-[#5B4DFF] font-semibold hover:underline">
+        <button onClick={onLogin} className="text-brand font-semibold hover:underline">
           Back to sign in
         </button>
       }
     >
       {sent ? (
-        <div className="px-3 py-3 bg-[#EAFBF1] border border-[#1F9D55]/20 rounded-lg text-sm text-[#1F9D55]">
+        <div className="px-3 py-3 bg-success-bg border border-success/20 rounded-lg text-sm text-success">
           {CONFIRMATION}
         </div>
       ) : (

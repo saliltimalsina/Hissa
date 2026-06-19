@@ -6,8 +6,8 @@ describe('statusMeta', () => {
     const m = statusMeta('success');
     expect(m.label).toBe('Success');
     expect(m.tone).toBe('success');
-    expect(m.pill).toContain('text-[#1F9D55]');
-    expect(m.dot).toContain('bg-[#1F9D55]');
+    expect(m.pill).toContain('text-success');
+    expect(m.dot).toContain('bg-success');
   });
 
   it('maps already_applied to the info tone', () => {
@@ -41,7 +41,7 @@ describe('statusMeta', () => {
 describe('toneClasses', () => {
   it('returns the pill + dot classes for a tone', () => {
     const c = toneClasses('warn');
-    expect(c.pill).toContain('text-[#92400E]');
-    expect(c.dot).toContain('bg-[#F59E0B]');
+    expect(c.pill).toContain('text-warn-fg');
+    expect(c.dot).toContain('bg-warn');
   });
 });
