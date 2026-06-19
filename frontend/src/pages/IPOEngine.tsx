@@ -1,6 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import type { Account, IPO, ExecLog } from '../types';
-import { apiStream, parseNdjson } from '../lib/api';
+import type { Account, IPO, ExecLog, AppliedIpo } from '../types';
+import { apiStream, parseNdjson, getAppliedIpos } from '../lib/api';
+
+// History statuses that mean "this account already applied to this IPO" — used to
+// default-uncheck and badge accounts so we never silently double-apply. Mirrors
+// the backend's terminal-status idempotency guard (success/already/allotment).
+const APPLIED_STATUSES = new Set(['success', 'already_applied', 'allotted', 'not_allotted']);
 
 type Activity = { type: 'apply' | 'verify' | 'sync' | 'error'; status: 'success' | 'failed' | 'info'; message: string };
 
@@ -28,6 +33,7 @@ function timeAgo(ts: number | null): string {
 interface AllocRow {
   account: Account;
   included: boolean;
+  alreadyApplied: boolean;
 }
 
 const LOG_STYLE: Record<string, string> = {
@@ -52,8 +58,33 @@ function daysLeft(closeDate: string) {
 export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRefreshIpos, fetchedAt, onActivity }: Props) {
   const [selectedIpo, setSelectedIpo] = useState<IPO | null>(null);
 
-  // Auto-refresh on mount if stale
+  // Per-IPO applied history: company_id -> { account_username: status }.
+  // Used to flag/default-uncheck accounts that already applied (no double-apply).
+  const [appliedByCompany, setAppliedByCompany] = useState<Record<number, Record<string, string>>>({});
+
+  function appliedAccountsFor(companyId: number): Record<string, string> {
+    return appliedByCompany[companyId] || {};
+  }
+  function hasAlreadyApplied(companyId: number, username: string): boolean {
+    const status = appliedAccountsFor(companyId)[username];
+    return status !== undefined && APPLIED_STATUSES.has(status);
+  }
+
+  async function loadApplied() {
+    try {
+      const list = await getAppliedIpos();
+      const map: Record<number, Record<string, string>> = {};
+      list.forEach((ipo: AppliedIpo) => { map[ipo.company_id] = ipo.accounts || {}; });
+      setAppliedByCompany(map);
+    } catch (e) {
+      // Non-fatal: without it we just don't pre-flag applied accounts.
+      console.error('Failed to load applied-IPO history', e);
+    }
+  }
+
+  // Auto-refresh on mount if stale; always load applied history.
   useEffect(() => {
+    loadApplied();
     if (accounts.length === 0 || loadingIpos) return;
     const isStale = !fetchedAt || (Date.now() - fetchedAt) > STALE_MS;
     if (isStale) onRefreshIpos();
@@ -73,7 +104,11 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
   function selectIpo(ipo: IPO) {
     setSelectedIpo(ipo);
     setKitta(ipo.minUnit);
-    setAlloc(accounts.map(a => ({ account: a, included: true })));
+    setAlloc(accounts.map(a => {
+      const alreadyApplied = hasAlreadyApplied(ipo.companyShareId, a.username);
+      // Default-uncheck accounts that already applied to prevent silent double-apply.
+      return { account: a, included: !alreadyApplied, alreadyApplied };
+    }));
     setLogs([]);
     setExecStats({ done: 0, total: 0, success: 0, failed: 0 });
     setExecDone(false);
@@ -84,8 +119,10 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
   }
 
   function toggleAll() {
-    const anyIncluded = alloc.some(r => r.included);
-    setAlloc(prev => prev.map(r => ({ ...r, included: !anyIncluded })));
+    // "Select all" only targets accounts that have NOT already applied.
+    const selectable = alloc.filter(r => !r.alreadyApplied);
+    const anyIncluded = selectable.some(r => r.included);
+    setAlloc(prev => prev.map(r => r.alreadyApplied ? r : ({ ...r, included: !anyIncluded })));
   }
 
   async function execute() {
@@ -111,7 +148,13 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
     try {
       // No credentials sent — the server applies using the selected account ids.
       const res = await apiStream('/api/apply', {
-        body: { company_id: selectedIpo.companyShareId, kitta, account_ids: accountIds },
+        body: {
+          company_id: selectedIpo.companyShareId,
+          kitta,
+          account_ids: accountIds,
+          company_name: selectedIpo.companyName,
+          scrip: selectedIpo.scrip,
+        },
         signal: controller.signal,
       });
 
@@ -145,6 +188,8 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
           setExecDone(true);
         }
       });
+      // Refresh applied-history so the just-applied accounts flag immediately.
+      loadApplied();
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         addLog({ ts: new Date().toLocaleTimeString(), username: 'system', status: 'failed', message: e.message });
@@ -216,6 +261,7 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
               const selected = selectedIpo?.companyShareId === ipo.companyShareId;
               const days = daysLeft(ipo.issueCloseDate);
               const urgent = days !== null && days <= 2;
+              const appliedCount = accounts.filter(a => hasAlreadyApplied(ipo.companyShareId, a.username)).length;
               return (
                 <button
                   key={ipo.companyShareId}
@@ -230,6 +276,11 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-[#111827] truncate">{ipo.companyName}</p>
                       <p className="text-[10px] text-[#6b7280] mt-0.5">{ipo.shareGroupName || ipo.shareTypeName}</p>
+                      {ipo.action && (
+                        <p className="text-[9px] text-[#92400E] mt-0.5" title="MeroShare reports a prior action on this issue">
+                          MeroShare: {ipo.action}
+                        </p>
+                      )}
                     </div>
                     {days !== null && (
                       <span className={`text-[10px] font-semibold flex-shrink-0 tabular ${urgent ? 'text-[#EF4444]' : 'text-[#6b7280]'}`}>
@@ -242,6 +293,13 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
                     <span className="text-[10px] text-[#6b7280]">·</span>
                     <span className="text-[10px] text-[#6b7280]">{formatDate(ipo.issueOpenDate)} → {formatDate(ipo.issueCloseDate)}</span>
                   </div>
+                  {appliedCount > 0 && accounts.length > 0 && (
+                    <div className="mt-1.5">
+                      <span className="text-[10px] font-semibold text-[#1F9D55] bg-[#1F9D55]/10 rounded px-1.5 py-0.5">
+                        {appliedCount}/{accounts.length} applied
+                      </span>
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -381,11 +439,20 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
                               type="checkbox"
                               checked={row.included}
                               onChange={() => toggleRow(i)}
-                              className="accent-[#5B4DFF]"
+                              disabled={row.alreadyApplied}
+                              title={row.alreadyApplied ? 'Already applied — check to apply again' : undefined}
+                              className="accent-[#5B4DFF] disabled:opacity-40"
                             />
                           </td>
                           <td className="px-2 py-2.5 font-medium text-[#111827]">
-                            {row.account.label || `Account ${i + 1}`}
+                            <span className="inline-flex items-center gap-1.5">
+                              {row.account.label || `Account ${i + 1}`}
+                              {row.alreadyApplied && (
+                                <span className="text-[9px] font-semibold text-[#1F9D55] bg-[#1F9D55]/10 rounded px-1 py-0.5">
+                                  applied
+                                </span>
+                              )}
+                            </span>
                           </td>
                           <td className="px-2 py-2.5 text-[#6b7280]">
                             {row.account.group_name || '—'}
@@ -397,6 +464,8 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
                               <span className={`font-medium capitalize ${LOG_STYLE[log.status]}`}>
                                 {log.status}
                               </span>
+                            ) : row.alreadyApplied ? (
+                              <span className="text-[#1F9D55] font-medium">applied</span>
                             ) : (
                               <span className={row.included ? 'text-[#6b7280]' : 'text-[#2a2a3a]'}>
                                 {row.included ? 'queued' : 'skipped'}

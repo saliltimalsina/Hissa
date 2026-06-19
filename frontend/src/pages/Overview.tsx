@@ -1,4 +1,4 @@
-import type { Account, Page, IPO, AccountPortfolio, AccountSnapshot } from '../types';
+import type { Account, Page, IPO, AccountPortfolio, AccountSnapshot, HistoryStats } from '../types';
 
 type Activity = { ts: number; type: 'apply' | 'verify' | 'sync' | 'error'; status: 'success' | 'failed' | 'info'; message: string };
 
@@ -11,6 +11,7 @@ interface Props {
   portfoliosFetchedAt: number | null;
   iposFetchedAt: number | null;
   activity: Activity[];
+  historyStats: HistoryStats | null;
 }
 
 function timeAgo(ts: number | null): string {
@@ -67,7 +68,7 @@ function ActionCard({ label, value, sub, variant, cta, onClick }: ActionCardProp
   );
 }
 
-export default function Overview({ accounts, onNavigate, snapshots, ipos, portfolios, portfoliosFetchedAt, iposFetchedAt, activity }: Props) {
+export default function Overview({ accounts, onNavigate, snapshots, ipos, portfolios, portfoliosFetchedAt, iposFetchedAt, activity, historyStats }: Props) {
   const issues = Object.values(snapshots).filter(s => ['auth_failed', 'expired', 'error'].includes(s.status));
   const expiring = Object.values(snapshots).filter(s => s.status === 'expiring');
   const healthy = Object.values(snapshots).filter(s => s.status === 'healthy').length;
@@ -168,6 +169,35 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
           />
         </div>
       </div>
+
+      {/* Application history — server-backed stats (not localStorage) */}
+      {historyStats && historyStats.total_applications > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider mb-4">Application History</p>
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Total Applications</p>
+              <p className="text-[28px] font-bold tabular leading-none tracking-tight text-[#111827]">{historyStats.total_applications}</p>
+              <p className="text-xs text-[#6B7280] mt-2">{historyStats.unique_ipos} IPOs · {historyStats.unique_accounts} accounts</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Success Rate</p>
+              <p className="text-[28px] font-bold tabular leading-none tracking-tight text-[#1F9D55]">{historyStats.success_rate}%</p>
+              <p className="text-xs text-[#6B7280] mt-2">{historyStats.success} ok · {historyStats.failed} failed</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Allotted</p>
+              <p className="text-[28px] font-bold tabular leading-none tracking-tight text-[#5B4DFF]">{historyStats.allotted}</p>
+              <p className="text-xs text-[#6B7280] mt-2">{historyStats.allotment_rate}% allotment rate</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Failed</p>
+              <p className="text-[28px] font-bold tabular leading-none tracking-tight text-[#EF4444]">{historyStats.failed}</p>
+              <p className="text-xs text-[#6B7280] mt-2">across all applications</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2-col layout: activity feed + quick actions/health */}
       <div className="grid grid-cols-3 gap-6">

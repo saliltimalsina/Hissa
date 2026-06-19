@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './index.css';
-import type { Account, Page, IPO, AccountPortfolio, AccountSnapshot, AccountReport } from './types';
+import type { Account, Page, IPO, AccountPortfolio, AccountSnapshot, AccountReport, HistoryRow, HistoryStats } from './types';
+import { deriveAlerts } from './lib/alerts';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import CommandPalette from './components/layout/CommandPalette';
@@ -16,7 +17,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
 import { useAuth } from './auth/AuthContext';
-import { api } from './lib/api';
+import { api, getHistory, getHistoryStats } from './lib/api';
 
 type AuthView = 'login' | 'signup' | 'forgot';
 
@@ -87,6 +88,43 @@ function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; use
     setActivity(next);
     localStorage.setItem('merit_activity', JSON.stringify(next));
   }
+
+  // Recent failed applications feed the Alerts page + bell (no creds, safe to hold).
+  const [historyFailures, setHistoryFailures] = useState<HistoryRow[]>([]);
+
+  // Persisted set of alert ids the user has dismissed/read.
+  const [readAlertIds, setReadAlertIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('merit_read_alerts') || '[]')); }
+    catch { return new Set(); }
+  });
+
+  const alerts = deriveAlerts(snapshots, historyFailures);
+  const unreadCount = alerts.filter(a => !readAlertIds.has(a.id)).length;
+
+  function markAllAlertsRead() {
+    const ids = new Set(alerts.map(a => a.id));
+    setReadAlertIds(ids);
+    localStorage.setItem('merit_read_alerts', JSON.stringify([...ids]));
+  }
+
+  const loadHistoryFailures = useCallback(async () => {
+    try {
+      const res = await getHistory({ status: 'failed', limit: 50 });
+      setHistoryFailures(res.rows);
+    } catch (e) {
+      // Non-fatal: alerts simply fall back to health-only.
+      console.error('Failed to load history for alerts', e);
+    }
+  }, []);
+
+  const [historyStats, setHistoryStats] = useState<HistoryStats | null>(null);
+  const loadHistoryStats = useCallback(async () => {
+    try {
+      setHistoryStats(await getHistoryStats());
+    } catch (e) {
+      console.error('Failed to load history stats', e);
+    }
+  }, []);
 
   function saveSnapshots(s: Record<string, AccountSnapshot>) {
     setSnapshots(s);
@@ -207,6 +245,8 @@ function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; use
     loadIpos();
     loadPortfolios();
     loadReports();
+    loadHistoryFailures();
+    loadHistoryStats();
     const unverified = accounts.filter(a => !snapshots[a.username]);
     if (unverified.length > 0) verifyAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -236,7 +276,7 @@ function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; use
       <TopBar
         accounts={accounts}
         onOpenCmd={() => setCmdOpen(true)}
-        notifications={0}
+        notifications={unreadCount}
         onNavigate={setPage}
         snapshots={snapshots}
         userEmail={userEmail}
@@ -248,13 +288,13 @@ function AppShell({ onLogout, userEmail, userName }: { onLogout: () => void; use
         <Sidebar current={page} onNavigate={setPage} />
 
         <main className="flex-1 overflow-auto select-text">
-          {page === 'overview' && <Overview accounts={accounts} onNavigate={setPage} snapshots={snapshots} ipos={ipos} portfolios={portfolios} portfoliosFetchedAt={portfoliosFetchedAt} iposFetchedAt={iposFetchedAt} activity={activity} />}
+          {page === 'overview' && <Overview accounts={accounts} onNavigate={setPage} snapshots={snapshots} ipos={ipos} portfolios={portfolios} portfoliosFetchedAt={portfoliosFetchedAt} iposFetchedAt={iposFetchedAt} activity={activity} historyStats={historyStats} />}
           {page === 'ipo-engine' && <IPOEngine accounts={accounts} ipos={ipos} loadingIpos={loadingIpos} ipoError={ipoError} onRefreshIpos={loadIpos} fetchedAt={iposFetchedAt} onActivity={pushActivity} />}
           {page === 'portfolio' && <Portfolio accounts={accounts} portfolios={portfolios} loading={loadingPortfolios} error={portfolioError} onRefresh={loadPortfolios} fetchedAt={portfoliosFetchedAt} />}
           {page === 'accounts' && <Accounts accounts={accounts} accountsLoaded={accountsLoaded} onRefresh={refreshAccounts} snapshots={snapshots} verifyingUser={verifyingUser} checking={checking} onVerifyOne={verifyOne} onCheckAll={verifyAll} />}
           {page === 'reports' && <Reports accounts={accounts} reports={reports} loading={loadingReports} error={reportsError} onRefresh={loadReports} fetchedAt={reportsFetchedAt} />}
           {page === 'automation' && <Automation />}
-          {page === 'notifications' && <Notifications />}
+          {page === 'notifications' && <Notifications alerts={alerts} readAlertIds={readAlertIds} onMarkAllRead={markAllAlertsRead} />}
           {page === 'settings' && <Settings />}
         </main>
       </div>
