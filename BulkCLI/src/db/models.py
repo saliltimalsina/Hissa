@@ -83,5 +83,11 @@ class SchedulerRule(Base):
     active = Column(Boolean, default=True)
     last_run_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Phase 2b — per-rule safety caps enforced by the automation engine on every
+    # run. Defaults are deliberately conservative: at most 50 accounts touched and
+    # at most 100 kitta applied per account, per rule, per run. These cap how much
+    # money an unattended run can move if a rule is misconfigured.
+    max_accounts = Column(Integer, nullable=False, default=50, server_default="50")
+    max_kitta = Column(Integer, nullable=False, default=100, server_default="100")
 
     owner = relationship("User", back_populates="scheduler_rules")

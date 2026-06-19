@@ -65,6 +65,9 @@ _USERS_MIGRATIONS = (
     'ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP NULL',
+    # Phase 2b — automation engine per-rule safety caps on the existing Neon table.
+    'ALTER TABLE scheduler_rules ADD COLUMN IF NOT EXISTS max_accounts INTEGER NOT NULL DEFAULT 50',
+    'ALTER TABLE scheduler_rules ADD COLUMN IF NOT EXISTS max_kitta INTEGER NOT NULL DEFAULT 100',
 )
 
 
