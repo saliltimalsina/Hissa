@@ -47,14 +47,21 @@ from src.routers import scheduler as scheduler_router
 async def _lifespan(_app: FastAPI):
     """Create DB tables if they don't exist (fresh Postgres on first deploy).
 
-    create_all is idempotent, but on Vercel this runs once per COLD START and
-    costs one DB round-trip. That's an acceptable trade-off here: the schema is
-    tiny, cold starts are infrequent on a low-traffic app, and it removes the
-    need for a separate migration step. If cold-start latency ever matters, move
-    schema creation to a one-off deploy/cron step and drop this call.
+    create_all is idempotent, but on Vercel this runs once per COLD START.
+    CRITICAL (serverless): a transient DB hiccup at startup (e.g. Neon waking
+    from idle, or a slow first connection) must NOT crash the whole function —
+    that would 500 every route, including DB-free ones like /api/brokers. So we
+    swallow startup DB errors and log them; create_all will succeed on a later
+    request once the DB is reachable, and DB-touching routes self-heal via the
+    lazy ensure below.
     """
-    from src.db.database import init_db
-    init_db()
+    try:
+        from src.db.database import init_db
+        init_db()
+    except Exception:
+        import sys, traceback
+        traceback.print_exc(file=sys.stderr)
+        logger.warning("startup init_db() failed; continuing, will retry lazily")
     yield
 
 
