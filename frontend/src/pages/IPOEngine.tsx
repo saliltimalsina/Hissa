@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Account, IPO, ExecLog, AppliedIpo } from '../types';
 import { apiStream, parseNdjson, getAppliedIpos } from '../lib/api';
 
@@ -70,7 +70,7 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
     return status !== undefined && APPLIED_STATUSES.has(status);
   }
 
-  async function loadApplied() {
+  const loadApplied = useCallback(async () => {
     try {
       const list = await getAppliedIpos();
       const map: Record<number, Record<string, string>> = {};
@@ -80,11 +80,15 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
       // Non-fatal: without it we just don't pre-flag applied accounts.
       console.error('Failed to load applied-IPO history', e);
     }
-  }
+  }, []);
 
-  // Auto-refresh on mount if stale; always load applied history.
+  // Auto-refresh on mount if stale; always load applied history. Guarded so it
+  // runs exactly once; all setState here happens inside async callbacks/props.
+  const didInit = useRef(false);
   useEffect(() => {
-    loadApplied();
+    if (didInit.current) return;
+    didInit.current = true;
+    void loadApplied();
     if (accounts.length === 0 || loadingIpos) return;
     const isStale = !fetchedAt || (Date.now() - fetchedAt) > STALE_MS;
     if (isStale) onRefreshIpos();
@@ -160,14 +164,20 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
 
       await parseNdjson(res, (ev) => {
         if (ev.type === 'start') {
-          setExecStats(s => ({ ...s, total: ev.total }));
+          const total = Number(ev.total) || 0;
+          setExecStats(s => ({ ...s, total }));
         } else if (ev.type === 'progress') {
-          const r = ev.result;
-          const status = r.status as 'success' | 'failed' | 'retrying' | 'pending';
+          const r = (ev.result ?? {}) as {
+            status?: string;
+            error_message?: string;
+            user_name?: string;
+          };
+          const status = (r.status ?? 'pending') as 'success' | 'failed' | 'retrying' | 'pending';
           const msg = r.error_message || (status === 'success' ? 'Applied successfully' : '');
+          const userName = r.user_name ?? '';
           addLog({
             ts: new Date().toLocaleTimeString('en-US', { hour12: false }),
-            username: r.user_name,
+            username: userName,
             status,
             message: msg,
           });
@@ -175,7 +185,7 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
             onActivity({
               type: 'apply',
               status: status === 'success' ? 'success' : 'failed',
-              message: `${selectedIpo?.companyName || 'IPO'} → ${r.user_name}: ${msg || status}`,
+              message: `${selectedIpo?.companyName || 'IPO'} → ${userName}: ${msg || status}`,
             });
           }
           setExecStats(s => ({
@@ -189,10 +199,12 @@ export default function IPOEngine({ accounts, ipos, loadingIpos, ipoError, onRef
         }
       });
       // Refresh applied-history so the just-applied accounts flag immediately.
-      loadApplied();
-    } catch (e: any) {
-      if (e.name !== 'AbortError') {
-        addLog({ ts: new Date().toLocaleTimeString(), username: 'system', status: 'failed', message: e.message });
+      void loadApplied();
+    } catch (e: unknown) {
+      const isAbort = e instanceof DOMException && e.name === 'AbortError';
+      if (!isAbort) {
+        const message = e instanceof Error ? e.message : 'Execution failed';
+        addLog({ ts: new Date().toLocaleTimeString(), username: 'system', status: 'failed', message });
       }
     } finally {
       setExecuting(false);

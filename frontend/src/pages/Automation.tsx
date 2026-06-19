@@ -56,19 +56,26 @@ export default function Automation() {
   const [formError, setFormError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  // Core fetch. `showSpinner` flips loading up-front for user-initiated reloads
+  // (Retry button); the initial mount uses the `useState(true)` default so the
+  // effect never sets state synchronously before its first await.
+  const load = useCallback(async (showSpinner = true) => {
+    if (showSpinner) {
+      setLoading(true);
+      setError('');
+    }
     try {
-      setRules(await listSchedulerRules());
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load automation rules');
+      const fetched = await listSchedulerRules();
+      setRules(fetched);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load automation rules');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Microtask so the fetch's setState lands after commit, not synchronously.
+  useEffect(() => { Promise.resolve().then(() => load(false)); }, [load]);
 
   async function onToggle(rule: SchedulerRule) {
     setBusyId(rule.id);
@@ -77,10 +84,10 @@ export default function Automation() {
     try {
       const updated = await toggleSchedulerRule(rule.id);
       setRules(prev => prev.map(r => r.id === updated.id ? updated : r));
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Revert on failure.
       setRules(prev => prev.map(r => r.id === rule.id ? { ...r, active: rule.active } : r));
-      setError(e?.message || 'Failed to toggle rule');
+      setError(e instanceof Error ? e.message : 'Failed to toggle rule');
     } finally {
       setBusyId(null);
     }
@@ -92,8 +99,8 @@ export default function Automation() {
     try {
       await deleteSchedulerRule(rule.id);
       setRules(prev => prev.filter(r => r.id !== rule.id));
-    } catch (e: any) {
-      setError(e?.message || 'Failed to delete rule');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to delete rule');
     } finally {
       setBusyId(null);
     }
@@ -123,8 +130,8 @@ export default function Automation() {
       setRules(prev => [...prev, created]);
       setForm(EMPTY_FORM);
       setShowForm(false);
-    } catch (err: any) {
-      setFormError(err?.message || 'Failed to create rule');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create rule');
     } finally {
       setSaving(false);
     }
@@ -254,7 +261,7 @@ export default function Automation() {
       {error && (
         <div className="px-4 py-3 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg text-xs text-[#EF4444] flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={load} className="underline font-medium">Retry</button>
+          <button onClick={() => load()} className="underline font-medium">Retry</button>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../auth/AuthContext';
+import { useAuth } from '../auth/useAuth';
 import AuthShell, { Field, SubmitButton, ErrorBanner } from './auth/AuthShell';
 
 interface Props {
@@ -21,8 +21,8 @@ export default function Login({ onSignup, onForgot }: Props) {
     try {
       await login(email.trim(), password);
       // success: AuthProvider sets user; App re-renders to the app shell.
-    } catch (err: any) {
-      setError(err.message || 'Unable to sign in.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in.');
     } finally {
       setLoading(false);
     }

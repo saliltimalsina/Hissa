@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import type { Account, Page, IPO, AccountPortfolio, AccountSnapshot, HistoryStats } from '../types';
 
 type Activity = { ts: number; type: 'apply' | 'verify' | 'sync' | 'error'; status: 'success' | 'failed' | 'info'; message: string };
@@ -77,10 +78,18 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
 
   const totalPortfolioValue = portfolios.reduce((s, p) => s + (p.total_value || 0), 0);
 
+  // "Now" is read from state (seeded once on mount, refreshed each minute) so we
+  // never call the impure Date.now() directly during render.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Closing-soon IPOs (≤2 days)
   const closingSoon = ipos.filter(ipo => {
     if (!ipo.issueCloseDate) return false;
-    const days = Math.ceil((new Date(ipo.issueCloseDate).getTime() - Date.now()) / 86400000);
+    const days = Math.ceil((new Date(ipo.issueCloseDate).getTime() - now) / 86400000);
     return days >= 0 && days <= 2;
   });
 

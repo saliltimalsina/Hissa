@@ -21,9 +21,9 @@ export default function ForgotPassword({ onLogin }: Props) {
     try {
       await api('/api/auth/forgot-password', { method: 'POST', body: { email: email.trim() } });
       setSent(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Endpoint always 200s; only surface true network/server failures.
-      setError(err.message || 'Something went wrong. Please try again.');
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }

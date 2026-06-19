@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../auth/AuthContext';
+import { useAuth } from '../auth/useAuth';
 import AuthShell, { Field, SubmitButton, ErrorBanner } from './auth/AuthShell';
 
 interface Props {
@@ -29,8 +29,8 @@ export default function Signup({ onLogin }: Props) {
     setLoading(true);
     try {
       await signup(email.trim(), password, name.trim() || undefined);
-    } catch (err: any) {
-      setError(err.message || 'Unable to create account.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to create account.');
     } finally {
       setLoading(false);
     }

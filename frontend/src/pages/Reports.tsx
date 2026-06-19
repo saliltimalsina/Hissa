@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { Account, AccountReport, ReportApplication } from '../types';
 
 interface Props {
@@ -55,15 +55,21 @@ export default function Reports({ accounts, reports, loading, error, onRefresh, 
   const [filter, setFilter] = useState<'all' | 'alloted' | 'not_alloted' | 'pending'>('all');
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'all' | 'account'>('all');
-  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  // Null = "no explicit pick yet" → fall back to the first report (derived
+  // during render, avoiding a setState-in-effect to seed the selection).
+  const [picked, setPicked] = useState<string | null>(null);
+  const selectedAccount =
+    picked && reports.some(r => r.username === picked)
+      ? picked
+      : (reports[0]?.username ?? '');
+  const setSelectedAccount = setPicked;
 
+  // Auto-refresh on mount if stale.
+  const didAutoRefresh = useRef(false);
   useEffect(() => {
-    if (reports.length > 0 && !selectedAccount) setSelectedAccount(reports[0].username);
-  }, [reports, selectedAccount]);
-
-  // Auto-refresh on mount if stale
-  useEffect(() => {
+    if (didAutoRefresh.current) return;
     if (accounts.length === 0 || loading) return;
+    didAutoRefresh.current = true;
     const isStale = !fetchedAt || (Date.now() - fetchedAt) > STALE_MS;
     if (isStale) onRefresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps

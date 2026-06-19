@@ -52,9 +52,12 @@ export default function CommandPalette({ onClose, onNavigate }: Props) {
     inputRef.current?.focus();
   }, []);
 
-  useEffect(() => {
+  // Reset the highlighted row whenever the query changes. Done in the change
+  // handler (event-driven) rather than an effect, to avoid a cascading render.
+  function onQueryChange(next: string) {
+    setQuery(next);
     setSelected(0);
-  }, [query]);
+  }
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -97,7 +100,7 @@ export default function CommandPalette({ onClose, onNavigate }: Props) {
           <input
             ref={inputRef}
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => onQueryChange(e.target.value)}
             placeholder="Search commands..."
             className="flex-1 bg-transparent text-sm text-[#111827] placeholder-[#6b7280] outline-none"
           />

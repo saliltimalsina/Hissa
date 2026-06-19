@@ -13,6 +13,9 @@ import type {
 
 export const UNAUTHORIZED_EVENT = 'hissa:unauthorized';
 
+/** A single parsed NDJSON line. Shape varies by `type`; callers narrow fields. */
+export type NdjsonEvent = Record<string, unknown>;
+
 /** Read a cookie value by name (used for the JS-readable CSRF cookie). */
 export function getCsrf(): string {
   const match = document.cookie.match(/(?:^|;\s*)hissa_csrf=([^;]*)/);
@@ -63,7 +66,7 @@ async function extractError(res: Response): Promise<string> {
  * JSON request helper. Returns parsed JSON (or `undefined` for 204/empty).
  * Throws Error(detail) on non-ok. Dispatches the unauthorized event on 401.
  */
-export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise<T> {
+export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
   const res = await buildRequest(path, opts);
 
   if (res.status === 401) {
@@ -102,7 +105,7 @@ export async function apiStream(path: string, opts: Omit<ApiOptions, 'stream'> =
  */
 export async function parseNdjson(
   res: Response,
-  onEvent: (ev: any) => void,
+  onEvent: (ev: NdjsonEvent) => void,
 ): Promise<void> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();

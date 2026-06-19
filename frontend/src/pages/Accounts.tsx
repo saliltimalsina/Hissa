@@ -150,8 +150,8 @@ export default function Accounts({ accounts, accountsLoaded, onRefresh, snapshot
       setForm({ ...EMPTY_FORM }); // clear creds from memory immediately
       setShowAdd(false);
       await onRefresh();
-    } catch (err: any) {
-      setAddError(err.message || 'Failed to add account.');
+    } catch (err: unknown) {
+      setAddError(err instanceof Error ? err.message : 'Failed to add account.');
     } finally {
       setAddBusy(false);
     }
@@ -191,8 +191,8 @@ export default function Accounts({ accounts, accountsLoaded, onRefresh, snapshot
       setEditForm({ ...EMPTY_FORM }); // clear any typed creds
       setEditId(null);
       await onRefresh();
-    } catch (err: any) {
-      setEditError(err.message || 'Failed to update account.');
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : 'Failed to update account.');
     } finally {
       setEditBusy(false);
     }
@@ -235,8 +235,8 @@ export default function Accounts({ accounts, accountsLoaded, onRefresh, snapshot
       setCsvText(''); // clear creds from memory
       setCsvMode(false);
       await onRefresh();
-    } catch (err: any) {
-      setCsvError(err.message || 'Import failed.');
+    } catch (err: unknown) {
+      setCsvError(err instanceof Error ? err.message : 'Import failed.');
     } finally {
       setCsvBusy(false);
     }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Account, AccountPortfolio, Holding } from '../types';
 
 interface Props {
@@ -29,15 +29,22 @@ interface MergedHolding extends Holding {
 
 export default function Portfolio({ accounts, portfolios, loading, error, onRefresh, fetchedAt }: Props) {
   const [view, setView] = useState<'aggregate' | 'account'>('aggregate');
-  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  // Null = "no explicit pick yet" → fall back to the first portfolio (derived
+  // during render, so we never need a setState-in-effect to seed it).
+  const [picked, setPicked] = useState<string | null>(null);
+  const selectedAccount =
+    picked && portfolios.some(p => p.username === picked)
+      ? picked
+      : (portfolios[0]?.username ?? '');
+  const setSelectedAccount = setPicked;
 
+  // Auto-refresh on mount if stale. The refresh runs from the effect but its
+  // setState happens inside the (async) onRefresh handler, not synchronously.
+  const didAutoRefresh = useRef(false);
   useEffect(() => {
-    if (portfolios.length > 0 && !selectedAccount) setSelectedAccount(portfolios[0].username);
-  }, [portfolios, selectedAccount]);
-
-  // Auto-refresh on mount if stale
-  useEffect(() => {
+    if (didAutoRefresh.current) return;
     if (accounts.length === 0 || loading) return;
+    didAutoRefresh.current = true;
     const isStale = !fetchedAt || (Date.now() - fetchedAt) > STALE_MS;
     if (isStale) onRefresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
