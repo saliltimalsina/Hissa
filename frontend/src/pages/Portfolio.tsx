@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Account, AccountPortfolio, Holding } from '../types';
+import { Spinner } from '../components/ui';
 
 interface Props {
   accounts: Account[];
@@ -29,15 +30,22 @@ interface MergedHolding extends Holding {
 
 export default function Portfolio({ accounts, portfolios, loading, error, onRefresh, fetchedAt }: Props) {
   const [view, setView] = useState<'aggregate' | 'account'>('aggregate');
-  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  // Null = "no explicit pick yet" → fall back to the first portfolio (derived
+  // during render, so we never need a setState-in-effect to seed it).
+  const [picked, setPicked] = useState<string | null>(null);
+  const selectedAccount =
+    picked && portfolios.some(p => p.username === picked)
+      ? picked
+      : (portfolios[0]?.username ?? '');
+  const setSelectedAccount = setPicked;
 
+  // Auto-refresh on mount if stale. The refresh runs from the effect but its
+  // setState happens inside the (async) onRefresh handler, not synchronously.
+  const didAutoRefresh = useRef(false);
   useEffect(() => {
-    if (portfolios.length > 0 && !selectedAccount) setSelectedAccount(portfolios[0].username);
-  }, [portfolios, selectedAccount]);
-
-  // Auto-refresh on mount if stale
-  useEffect(() => {
+    if (didAutoRefresh.current) return;
     if (accounts.length === 0 || loading) return;
+    didAutoRefresh.current = true;
     const isStale = !fetchedAt || (Date.now() - fetchedAt) > STALE_MS;
     if (isStale) onRefresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,53 +77,53 @@ export default function Portfolio({ accounts, portfolios, loading, error, onRefr
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#F7F8FC]">
+    <div className="h-full flex flex-col bg-surface">
       {/* Header */}
-      <div className="px-8 py-6 border-b border-[#ECECF2] flex items-center justify-between flex-shrink-0">
+      <div className="px-4 sm:px-8 py-6 border-b border-line flex items-center justify-between flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-[#111827] tracking-tight">Portfolio</h1>
-          <p className="text-sm text-[#6B7280] mt-1">Multi-account wealth aggregation</p>
+          <h1 className="text-display text-ink">Portfolio</h1>
+          <p className="text-body text-muted mt-1">Multi-account wealth aggregation</p>
         </div>
         {loading ? (
-          <span className="flex items-center gap-1.5 text-xs text-[#6b7280]">
-            <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>
+          <span className="flex items-center gap-1.5 text-xs text-muted">
+            <Spinner size="sm" />
             Updating
           </span>
         ) : fetchedAt ? (
-          <button onClick={onRefresh} className="text-xs text-[#6b7280] hover:text-[#5B4DFF] transition-colors" title="Refresh now">
+          <button onClick={onRefresh} className="text-xs text-muted hover:text-brand transition-colors" title="Refresh now">
             Updated {timeAgo(fetchedAt)}
           </button>
         ) : null}
       </div>
 
       {error && (
-        <div className="mx-6 mt-3 px-4 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded text-xs text-[#EF4444]">
+        <div className="mx-6 mt-3 px-4 py-2 bg-danger/10 border border-danger/20 rounded text-xs text-danger">
           {error}
         </div>
       )}
 
       {/* Stats row */}
       {portfolios.length > 0 && (
-        <div className="px-6 py-3 border-b border-[#ECECF2] flex items-center gap-8 flex-shrink-0">
+        <div className="px-6 py-3 border-b border-line flex items-center gap-8 flex-shrink-0">
           <div>
-            <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Total Value</p>
-            <p className="text-2xl font-bold text-[#111827] tabular mt-1 tracking-tight">{formatNPR(totalValue)}</p>
+            <p className="text-[10px] text-muted uppercase tracking-wide font-semibold">Total Value</p>
+            <p className="text-2xl font-bold text-ink tabular mt-1 tracking-tight">{formatNPR(totalValue)}</p>
           </div>
           <div>
-            <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Holdings</p>
-            <p className="text-2xl font-bold text-[#111827] tabular mt-1 tracking-tight">{totalHoldings}</p>
+            <p className="text-[10px] text-muted uppercase tracking-wide font-semibold">Holdings</p>
+            <p className="text-2xl font-bold text-ink tabular mt-1 tracking-tight">{totalHoldings}</p>
           </div>
           <div>
-            <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Accounts</p>
-            <p className="text-2xl font-bold text-[#111827] tabular mt-1 tracking-tight">{portfolios.filter(p => !p.error).length}</p>
+            <p className="text-[10px] text-muted uppercase tracking-wide font-semibold">Accounts</p>
+            <p className="text-2xl font-bold text-ink tabular mt-1 tracking-tight">{portfolios.filter(p => !p.error).length}</p>
           </div>
 
           {/* View toggle */}
-          <div className="ml-auto flex items-center gap-1 bg-[#ffffff] border border-[#D1D5DB] rounded p-1">
-            <button onClick={() => setView('aggregate')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${view === 'aggregate' ? 'bg-[#5B4DFF] text-white' : 'text-[#6b7280] hover:text-[#374151]'}`}>
+          <div className="ml-auto flex items-center gap-1 bg-white border border-border rounded p-1">
+            <button onClick={() => setView('aggregate')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${view === 'aggregate' ? 'bg-brand text-white' : 'text-muted hover:text-body'}`}>
               Aggregate
             </button>
-            <button onClick={() => setView('account')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${view === 'account' ? 'bg-[#5B4DFF] text-white' : 'text-[#6b7280] hover:text-[#374151]'}`}>
+            <button onClick={() => setView('account')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${view === 'account' ? 'bg-brand text-white' : 'text-muted hover:text-body'}`}>
               By Account
             </button>
           </div>
@@ -127,16 +135,16 @@ export default function Portfolio({ accounts, portfolios, loading, error, onRefr
         {portfolios.length === 0 && !loading && !error && (
           <div className="flex items-center justify-center h-48">
             <div className="text-center">
-              <p className="text-sm text-[#6b7280]">No portfolio data</p>
-              <p className="text-xs text-[#D1D5DB] mt-1">Load accounts first, then click "Load Portfolio"</p>
+              <p className="text-sm text-muted">No portfolio data</p>
+              <p className="text-xs text-faint mt-1">Load accounts first, then click "Load Portfolio"</p>
             </div>
           </div>
         )}
 
         {portfolios.length > 0 && view === 'aggregate' && (
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-[#F7F8FC] border-b border-[#ECECF2]">
-              <tr className="text-[#6b7280]">
+            <thead className="sticky top-0 bg-surface border-b border-line">
+              <tr className="text-muted">
                 <th className="px-6 py-2.5 text-left font-medium">Script</th>
                 <th className="px-3 py-2.5 text-left font-medium">Name</th>
                 <th className="px-3 py-2.5 text-right font-medium">Qty</th>
@@ -151,16 +159,16 @@ export default function Portfolio({ accounts, portfolios, loading, error, onRefr
                 const priceDiff = parseFloat(h.lastTransactionPrice) - parseFloat(h.previousClosingPrice);
                 const positive = priceDiff >= 0;
                 return (
-                  <tr key={i} className="border-b border-[#F4F4F8] hover:bg-[#FAFAFF] transition-colors">
-                    <td className="px-6 py-2.5 font-semibold text-[#111827] font-mono">{h.script}</td>
-                    <td className="px-3 py-2.5 text-[#374151] max-w-xs truncate">{h.scriptDesc}</td>
-                    <td className="px-3 py-2.5 text-right tabular text-[#111827] font-medium">{h.totalQty.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right tabular text-[#111827]">{h.lastTransactionPrice}</td>
-                    <td className="px-3 py-2.5 text-right tabular text-[#111827] font-medium">{formatNPR(h.totalValue)}</td>
-                    <td className={`px-3 py-2.5 text-right tabular ${positive ? 'text-[#1F9D55]' : 'text-[#EF4444]'}`}>
+                  <tr key={i} className="border-b border-line-soft hover:bg-brand-subtle transition-colors">
+                    <td className="px-6 py-2.5 font-semibold text-ink font-mono">{h.script}</td>
+                    <td className="px-3 py-2.5 text-body max-w-xs truncate">{h.scriptDesc}</td>
+                    <td className="px-3 py-2.5 text-right tabular text-ink font-medium">{h.totalQty.toLocaleString()}</td>
+                    <td className="px-3 py-2.5 text-right tabular text-ink">{h.lastTransactionPrice}</td>
+                    <td className="px-3 py-2.5 text-right tabular text-ink font-medium">{formatNPR(h.totalValue)}</td>
+                    <td className={`px-3 py-2.5 text-right tabular ${positive ? 'text-success' : 'text-danger'}`}>
                       {h.previousClosingPrice}
                     </td>
-                    <td className="px-6 py-2.5 text-[#6b7280]">{h.accounts.join(', ')}</td>
+                    <td className="px-6 py-2.5 text-muted">{h.accounts.join(', ')}</td>
                   </tr>
                 );
               })}
@@ -169,20 +177,20 @@ export default function Portfolio({ accounts, portfolios, loading, error, onRefr
         )}
 
         {portfolios.length > 0 && view === 'account' && (
-          <div className="flex h-full">
+          <div className="flex flex-col sm:flex-row h-full">
             {/* Account list */}
-            <div className="w-52 flex-shrink-0 border-r border-[#ECECF2] overflow-y-auto">
+            <div className="w-full sm:w-52 flex-shrink-0 border-b sm:border-b-0 sm:border-r border-line overflow-y-auto max-h-48 sm:max-h-none">
               {portfolios.map(p => (
                 <button
                   key={p.username}
                   onClick={() => setSelectedAccount(p.username)}
-                  className={`w-full text-left px-4 py-3 border-b border-[#ECECF2] transition-colors ${
-                    selectedAccount === p.username ? 'bg-[#5B4DFF]/10 border-l-2 border-l-[#5B4DFF]' : 'hover:bg-[#ffffff]'
+                  className={`w-full text-left px-4 py-3 border-b border-line transition-colors ${
+                    selectedAccount === p.username ? 'bg-brand/10 border-l-2 border-l-brand' : 'hover:bg-white'
                   }`}
                 >
-                  <p className="text-xs font-medium text-[#111827] truncate">{p.label || p.username}</p>
-                  <p className="text-[10px] text-[#6b7280] mt-0.5 tabular">
-                    {p.error ? <span className="text-[#EF4444]">Error</span> : formatNPR(p.total_value)}
+                  <p className="text-xs font-medium text-ink truncate">{p.label || p.username}</p>
+                  <p className="text-[10px] text-muted mt-0.5 tabular">
+                    {p.error ? <span className="text-danger">Error</span> : formatNPR(p.total_value)}
                   </p>
                 </button>
               ))}
@@ -192,11 +200,11 @@ export default function Portfolio({ accounts, portfolios, loading, error, onRefr
             <div className="flex-1 overflow-auto">
               {activePortfolio && (
                 activePortfolio.error ? (
-                  <div className="p-6 text-sm text-[#EF4444]">{activePortfolio.error}</div>
+                  <div className="p-6 text-sm text-danger">{activePortfolio.error}</div>
                 ) : (
                   <table className="w-full text-xs">
-                    <thead className="sticky top-0 bg-[#F7F8FC] border-b border-[#ECECF2]">
-                      <tr className="text-[#6b7280]">
+                    <thead className="sticky top-0 bg-surface border-b border-line">
+                      <tr className="text-muted">
                         <th className="px-6 py-2.5 text-left font-medium">Script</th>
                         <th className="px-3 py-2.5 text-right font-medium">Qty</th>
                         <th className="px-3 py-2.5 text-right font-medium">LTP</th>
@@ -205,11 +213,11 @@ export default function Portfolio({ accounts, portfolios, loading, error, onRefr
                     </thead>
                     <tbody>
                       {activePortfolio.holdings.map((h, i) => (
-                        <tr key={i} className="border-b border-[#F4F4F8] hover:bg-[#FAFAFF] transition-colors">
-                          <td className="px-6 py-2.5 font-semibold text-[#111827] font-mono">{h.script}</td>
-                          <td className="px-3 py-2.5 text-right tabular text-[#111827]">{h.currentBalance.toLocaleString()}</td>
-                          <td className="px-3 py-2.5 text-right tabular text-[#111827]">{h.lastTransactionPrice}</td>
-                          <td className="px-3 py-2.5 text-right tabular text-[#111827] font-medium">{formatNPR(h.valueOfLastTransPrice)}</td>
+                        <tr key={i} className="border-b border-line-soft hover:bg-brand-subtle transition-colors">
+                          <td className="px-6 py-2.5 font-semibold text-ink font-mono">{h.script}</td>
+                          <td className="px-3 py-2.5 text-right tabular text-ink">{h.currentBalance.toLocaleString()}</td>
+                          <td className="px-3 py-2.5 text-right tabular text-ink">{h.lastTransactionPrice}</td>
+                          <td className="px-3 py-2.5 text-right tabular text-ink font-medium">{formatNPR(h.valueOfLastTransPrice)}</td>
                         </tr>
                       ))}
                     </tbody>

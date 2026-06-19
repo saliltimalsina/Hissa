@@ -3,6 +3,7 @@
 
 import sys
 import json
+import logging
 import asyncio
 from pathlib import Path
 from typing import List, Optional
@@ -11,11 +12,13 @@ from datetime import datetime
 
 import os
 
+from contextlib import asynccontextmanager
+
 import requests as req_lib
 from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, conlist
 from sqlalchemy.orm import Session
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -28,10 +31,10 @@ from src.models.user import User
 from src.models.ipo_application import IPOApplication
 from src.services.application_service import ApplicationService
 from src.config.settings import get_settings
-from src.config.security import FRONTEND_URL
+from src.config.security import FRONTEND_URL, IS_PROD
 from src.config.ratelimit import limiter
 from src.db.database import get_db
-from src.db.models import User as DBUser
+from src.db.models import User as DBUser, ApplicationHistory
 from src.auth.jwt_handler import get_current_user
 from src.auth.session import require_csrf
 from src.routers.accounts import get_decrypted_accounts
@@ -40,7 +43,29 @@ from src.routers import accounts as accounts_router
 from src.routers import history as history_router
 from src.routers import scheduler as scheduler_router
 
-app = FastAPI(title="Hissa API")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Create DB tables if they don't exist (fresh Postgres on first deploy).
+
+    create_all is idempotent, but on Vercel this runs once per COLD START.
+    CRITICAL (serverless): a transient DB hiccup at startup (e.g. Neon waking
+    from idle, or a slow first connection) must NOT crash the whole function —
+    that would 500 every route, including DB-free ones like /api/brokers. So we
+    swallow startup DB errors and log them; create_all will succeed on a later
+    request once the DB is reachable, and DB-touching routes self-heal via the
+    lazy ensure below.
+    """
+    try:
+        from src.db.database import init_db
+        init_db()
+    except Exception:
+        import sys, traceback
+        traceback.print_exc(file=sys.stderr)
+        logger.warning("startup init_db() failed; continuing, will retry lazily")
+    yield
+
+
+app = FastAPI(title="Hissa API", lifespan=_lifespan)
 
 # Rate limiting (slowapi) — keyed by client IP, applied per-endpoint in routers.
 app.state.limiter = limiter
@@ -48,23 +73,23 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    """Create DB tables if they don't exist (fresh Postgres on first deploy)."""
-    from src.db.database import init_db
-    init_db()
-
-
 # Allowed CORS origins: env-driven, defaulting to local dev + the prod frontend.
 # (In production the frontend and API are same-origin via the Vercel rewrite,
 # so CORS mainly matters for local dev and any direct API access.)
-_default_origins = [
+# SEC-07: with allow_credentials=True we MUST send an explicit origin list (never
+# "*"). Localhost/127.0.0.1 dev origins are included only in dev; in prod they are
+# excluded so a malicious page served from localhost can't ride a user's cookies.
+_dev_origins = [
     "http://localhost:5173", "http://127.0.0.1:5173",
     "http://localhost:5174", "http://127.0.0.1:5174",
-    FRONTEND_URL,
 ]
+_prod_origins = [FRONTEND_URL]
 _env_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
-ALLOWED_ORIGINS = sorted(set(_default_origins + _env_origins))
+if IS_PROD:
+    _base_origins = _prod_origins
+else:
+    _base_origins = _dev_origins + _prod_origins
+ALLOWED_ORIGINS = sorted(set(_base_origins + _env_origins))
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,6 +98,19 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-CSRF-Token"],
 )
+
+
+# Security response headers applied to every response (HSTS, sniffing,
+# clickjacking, referrer leakage).
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
 
 # Mount feature routers (all auth-gated; auth router under /api/auth).
 app.include_router(auth_router.router)
@@ -83,6 +121,20 @@ app.include_router(scheduler_router.router)
 settings = get_settings()
 BASE = settings.API_BASE_URL
 JSON_H = {"Accept": "application/json", "Content-Type": "application/json"}
+
+logger = logging.getLogger(__name__)
+# Verbose diagnostics (raw upstream bodies / sample values) are gated behind this
+# flag, which defaults OFF so they never reach stdout in production.
+DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
+
+# Broker list is static — load capitals.json once at import rather than reading
+# it from disk on every /api/brokers request (incl. the frequent healthcheck).
+try:
+    with open(Path(__file__).parent / "capitals.json") as _f:
+        _BROKERS = json.load(_f)
+except Exception:
+    logger.warning("Failed to load capitals.json", exc_info=True)
+    _BROKERS = []
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -106,14 +158,22 @@ class ApplyRequest(BaseModel):
     company_id: int
     kitta: int
     account_ids: Optional[List[int]] = None
+    # Optional IPO metadata for the persisted history row; if absent the row
+    # stores NULL/blank for these (the apply must not fail on missing metadata).
+    company_name: Optional[str] = None
+    scrip: Optional[str] = None
 
 class MultiAllocation(BaseModel):
     account_id: int
     company_id: int
     kitta: int
+    # Optional IPO metadata (see ApplyRequest) carried per-allocation.
+    company_name: Optional[str] = None
+    scrip: Optional[str] = None
 
 class MultiApplyRequest(BaseModel):
-    allocations: List[MultiAllocation]
+    # Bounded: apply_multi does a MeroShare round-trip per allocation.
+    allocations: conlist(MultiAllocation, max_length=200)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -157,7 +217,8 @@ def auth(acc: AccountData) -> Optional[str]:
         print(f"[AUTH] {acc.username} EXCEPTION: {e}", flush=True)
         return None
     if r.status_code != 200:
-        print(f"[AUTH] {acc.username} HTTP {r.status_code}: {r.text[:150]}", flush=True)
+        if DEBUG:
+            print(f"[AUTH] {acc.username} HTTP {r.status_code}: {r.text[:150]}", flush=True)
         return None
     return r.headers.get("Authorization", "").strip() or None
 
@@ -166,6 +227,7 @@ def apply_single(user: User, company_id: int, kitta: int) -> dict:
     application = IPOApplication(user_id=str(user.client_id), user_name=user.username,
                                   company_id=company_id, kitta_amount=kitta)
     svc = ApplicationService()
+    already_applied = False  # F12: set True when upstream says the account already applied
     try:
         from src.api.meroshare_client import MeroShareClient
         client = MeroShareClient()
@@ -194,23 +256,81 @@ def apply_single(user: User, company_id: int, kitta: int) -> dict:
             app_data["transactionPIN"] = str(app_data["transactionPIN"])
         print(f"[APPLY] {user.username} → company {company_id}, kitta {kitta}", flush=True)
         r = req_lib.post(apply_url, json=app_data, headers=h, timeout=15)
-        print(f"[APPLY] {user.username} ← HTTP {r.status_code}: {r.text[:300]}", flush=True)
+        if DEBUG:
+            print(f"[APPLY] {user.username} ← HTTP {r.status_code}: {r.text[:300]}", flush=True)
         body = {}
         try:
             body = r.json() if isinstance(r.json(), dict) else (r.json()[0] if r.json() else {})
         except Exception:
             pass
         msg = (body.get("message") or body.get("errorMessage") or body.get("error") or "").lower()
-        success_signals = ("applied successfully", "share has been applied", "already")
-        if r.status_code in (200, 201) or any(s in msg for s in success_signals):
+        # F12: distinguish "already applied" from a genuine fresh success. An
+        # account that had already applied is NOT a green success — it is a
+        # distinct terminal state surfaced as `already_applied`. Match the
+        # upstream "already" wording explicitly (e.g. "already applied",
+        # "you have already") rather than treating any 'already' substring as
+        # success without flagging it.
+        already_applied = "already" in msg
+        # Tightened: a fresh success must come from a real success HTTP code or
+        # an explicit success message — not from the bare 'already' substring.
+        success_signals = ("applied successfully", "share has been applied")
+        if already_applied:
+            # mark_success keeps error_message empty / last_attempt set; we then
+            # override the status to the distinct value (the IPOApplication model
+            # only validates the CLI status set, so set it on the dict below).
+            application.mark_success()
+        elif r.status_code in (200, 201) or any(s in msg for s in success_signals):
             application.mark_success()
         else:
-            err_msg = body.get("message") or body.get("errorMessage") or body.get("error") or f"HTTP {r.status_code}: {r.text[:200]}"
+            # Raw upstream body may contain internal/PII details — log it
+            # server-side only and surface a generic message to the client.
+            logger.warning("[APPLY] %s failed: HTTP %s: %s",
+                           user.username, r.status_code, r.text[:300])
+            err_msg = (body.get("message") or body.get("errorMessage")
+                       or body.get("error") or "Application failed")
             application.mark_failed(err_msg)
     except Exception as e:
         application.mark_failed(str(e))
     application.increment_attempts()
-    return application.to_dict()
+    result = application.to_dict()
+    if already_applied:
+        result["status"] = "already_applied"
+    return result
+
+
+def _record_history(db: Session, user_id: int, result: dict,
+                    company_id: int, kitta: int,
+                    company_name: Optional[str] = None,
+                    scrip: Optional[str] = None) -> None:
+    """F2: persist one ApplicationHistory row for a per-account apply result.
+
+    Called from the apply route generators where a request-scoped `db` Session is
+    in scope (apply_single itself runs in a ThreadPoolExecutor with no db).
+
+    A history write must NEVER break the user's apply stream: any DB error is
+    logged and swallowed (and the session rolled back) so the next allocation
+    still streams. Missing IPO metadata (company_name/scrip) is stored as
+    NULL/blank rather than failing the insert.
+    """
+    try:
+        row = ApplicationHistory(
+            user_id=user_id,
+            account_username=result.get("user_name") or "",
+            company_id=company_id,
+            company_name=company_name,
+            scrip=scrip,
+            kitta=kitta,
+            status=result.get("status") or "failed",
+            error_message=result.get("error_message") or None,
+        )
+        db.add(row)
+        db.commit()
+    except Exception:
+        logger.warning("[HISTORY] failed to persist application history", exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 def _fetch_account_snapshot(acc: AccountData) -> dict:
@@ -334,23 +454,43 @@ def get_ipos(body: AccountSelect = AccountSelect(),
         # expired Hissa session. A 401 here would make the frontend think the
         # user's session died and log them out.
         raise HTTPException(502, f"MeroShare authentication failed for all accounts: {', '.join(failed_users)}")
-    ipo_payload = {
-        "filterFieldParams": [
-            {"key": "companyIssue.companyISIN.script", "alias": "Scrip"},
-            {"key": "companyIssue.companyISIN.company.name", "alias": "Company Name"},
-            {"key": "companyIssue.assignedToClient.name", "value": "", "alias": "Issue Manager"},
-        ],
-        "page": 1, "size": 20,
-        "searchRoleViewConstants": "VIEW_APPLICABLE_SHARE",
-        "filterDateParams": [
-            {"key": "minIssueOpenDate", "condition": "", "alias": "", "value": ""},
-            {"key": "maxIssueCloseDate", "condition": "", "alias": "", "value": ""},
-        ],
-    }
-    r = req_lib.post(f"{BASE}/meroShare/companyShare/applicableIssue/",
-        json=ipo_payload, headers={**JSON_H, "Authorization": token}, timeout=15)
-    if r.status_code != 200:
-        return []
+    def _payload(page: int, size: int) -> dict:
+        return {
+            "filterFieldParams": [
+                {"key": "companyIssue.companyISIN.script", "alias": "Scrip"},
+                {"key": "companyIssue.companyISIN.company.name", "alias": "Company Name"},
+                {"key": "companyIssue.assignedToClient.name", "value": "", "alias": "Issue Manager"},
+            ],
+            "page": page, "size": size,
+            "searchRoleViewConstants": "VIEW_APPLICABLE_SHARE",
+            "filterDateParams": [
+                {"key": "minIssueOpenDate", "condition": "", "alias": "", "value": ""},
+                {"key": "maxIssueCloseDate", "condition": "", "alias": "", "value": ""},
+            ],
+        }
+
+    # F8: page through the applicableIssue feed so >20 open issues are not
+    # silently truncated. A larger page size keeps the common case to one round
+    # trip; the loop drains any overflow (bounded so a misbehaving upstream can't
+    # spin forever).
+    PAGE_SIZE = 200
+    MAX_PAGES = 10
+    h = {**JSON_H, "Authorization": token}
+    raw_issues = []
+    for page in range(1, MAX_PAGES + 1):
+        r = req_lib.post(f"{BASE}/meroShare/companyShare/applicableIssue/",
+            json=_payload(page, PAGE_SIZE), headers=h, timeout=15)
+        if r.status_code != 200:
+            # F8: a non-200 AFTER successful auth is a real UPSTREAM outage, not
+            # "no IPOs open" — surface it as a 502 rather than masquerading as an
+            # empty list. (502, not 401, so the frontend doesn't log the user out.)
+            logger.warning("[IPOS] applicableIssue page %s failed: HTTP %s: %s",
+                           page, r.status_code, r.text[:300])
+            raise HTTPException(502, "Failed to fetch IPOs from MeroShare")
+        batch = r.json().get("object", []) or []
+        raw_issues.extend(batch)
+        if len(batch) < PAGE_SIZE:
+            break  # last (partial) page reached
     return [
         {
             "companyShareId": i.get("companyShareId"),
@@ -364,7 +504,7 @@ def get_ipos(body: AccountSelect = AccountSelect(),
             "issueCloseDate": i.get("issueCloseDate", ""),
             "action": i.get("action", ""),
         }
-        for i in r.json().get("object", [])
+        for i in raw_issues
     ]
 
 
@@ -397,14 +537,19 @@ async def apply_multi(req: MultiApplyRequest,
         for i, alloc in enumerate(req.allocations):
             acc = _acc_data(alloc.account_id)
             if acc is None:
+                not_found = {"user_name": "?", "status": "failed",
+                             "error_message": "Account not found",
+                             "company_id": alloc.company_id, "kitta_amount": alloc.kitta}
+                _record_history(db, current_user.id, not_found, alloc.company_id,
+                                alloc.kitta, alloc.company_name, alloc.scrip)
                 yield json.dumps({"type": "progress", "index": i, "total": total,
-                    "result": {"user_name": "?", "status": "failed",
-                               "error_message": "Account not found",
-                               "company_id": alloc.company_id, "kitta_amount": alloc.kitta}}) + "\n"
+                    "result": not_found}) + "\n"
                 continue
             user = make_user(acc)
             result = await loop.run_in_executor(None, apply_single, user, alloc.company_id, alloc.kitta)
             result["company_id"] = alloc.company_id
+            _record_history(db, current_user.id, result, alloc.company_id,
+                            alloc.kitta, alloc.company_name, alloc.scrip)
             yield json.dumps({"type": "progress", "index": i, "total": total, "result": result}) + "\n"
             await asyncio.sleep(1.0)
         yield json.dumps({"type": "complete"}) + "\n"
@@ -427,6 +572,8 @@ async def apply_bulk(req: ApplyRequest,
         yield json.dumps({"type": "start", "total": total}) + "\n"
         for i, user in enumerate(users):
             result = await loop.run_in_executor(None, apply_single, user, req.company_id, req.kitta)
+            _record_history(db, current_user.id, result, req.company_id,
+                            req.kitta, req.company_name, req.scrip)
             yield json.dumps({"type": "progress", "index": i, "total": total, "result": result}) + "\n"
             await asyncio.sleep(1.0)
         yield json.dumps({"type": "complete"}) + "\n"
@@ -436,9 +583,7 @@ async def apply_bulk(req: ApplyRequest,
 
 @app.get("/api/brokers")
 def get_brokers():
-    capitals_path = Path(__file__).parent / "capitals.json"
-    with open(capitals_path) as f:
-        return json.load(f)
+    return _BROKERS
 
 
 def _fetch_account_reports(acc: AccountData) -> dict:
@@ -459,9 +604,13 @@ def _fetch_account_reports(acc: AccountData) -> dict:
         }
         r = req_lib.post(f"{BASE}/meroShare/applicantForm/active/search/",
             json=payload, headers=h, timeout=15)
-        print(f"[REPORTS] {acc.username} ← HTTP {r.status_code}", flush=True)
+        if DEBUG:
+            print(f"[REPORTS] {acc.username} ← HTTP {r.status_code}", flush=True)
         if r.status_code != 200:
-            return {**base, "error": f"HTTP {r.status_code}: {r.text[:120]}", "applications": []}
+            # Log raw upstream body server-side; return a generic error.
+            logger.warning("[REPORTS] %s search failed: HTTP %s: %s",
+                           acc.username, r.status_code, r.text[:300])
+            return {**base, "error": "Failed to fetch reports", "applications": []}
         raw = r.json()
         if isinstance(raw, dict):
             apps = raw.get("object") or raw.get("data") or raw.get("result") or []
@@ -469,10 +618,11 @@ def _fetch_account_reports(acc: AccountData) -> dict:
             apps = raw
         else:
             apps = []
-        print(f"[REPORTS] {acc.username} response top keys: {list(raw.keys()) if isinstance(raw, dict) else type(raw).__name__}, apps={len(apps)}", flush=True)
-        if apps:
-            print(f"[REPORTS] {acc.username} sample app keys: {list(apps[0].keys())[:35]}", flush=True)
-            print(f"[REPORTS] {acc.username} sample app values: {dict(list(apps[0].items())[:10])}", flush=True)
+        if DEBUG:
+            print(f"[REPORTS] {acc.username} response top keys: {list(raw.keys()) if isinstance(raw, dict) else type(raw).__name__}, apps={len(apps)}", flush=True)
+            if apps:
+                print(f"[REPORTS] {acc.username} sample app keys: {list(apps[0].keys())[:35]}", flush=True)
+                print(f"[REPORTS] {acc.username} sample app values: {dict(list(apps[0].items())[:10])}", flush=True)
         # Fetch detail per application to get full status, remarks, block amount, transaction amount
         for a in apps[:25]:  # cap to recent 25
             fid = a.get("applicantFormId")

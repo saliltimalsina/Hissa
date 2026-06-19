@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, conlist
 from sqlalchemy.orm import Session
 from src.db.database import get_db
 from src.db.models import User, MSAccount
@@ -165,7 +165,7 @@ def delete_account(
 
 @router.post("/import")
 def bulk_import(
-    rows: List[BulkImportRow],
+    rows: conlist(BulkImportRow, max_length=500),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     _csrf: None = Depends(require_csrf),

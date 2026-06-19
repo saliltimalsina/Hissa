@@ -125,3 +125,67 @@ export interface ExecLog {
   status: 'success' | 'failed' | 'retrying' | 'pending';
   message: string;
 }
+
+// ── Scheduler / automation (server-backed) ─────────────────────────────────────
+export interface SchedulerRule {
+  id: number;
+  name: string;
+  rule_type: 'auto_all' | 'sector_filter';
+  kitta: number;
+  sectors: string[] | null;
+  account_ids: number[] | null;
+  active: boolean;
+  last_run_at: string | null;
+  created_at: string | null;
+  max_accounts: number;
+  max_kitta: number;
+}
+
+export interface SchedulerRuleInput {
+  name: string;
+  rule_type: 'auto_all' | 'sector_filter';
+  kitta?: number;
+  sectors?: string[] | null;
+  account_ids?: number[] | null;
+  max_accounts?: number;
+  max_kitta?: number;
+}
+
+// ── Application history (server-backed) ─────────────────────────────────────────
+export interface HistoryRow {
+  id: number;
+  account_username: string;
+  company_id: number;
+  company_name: string | null;
+  scrip: string | null;
+  kitta: number;
+  status: string;
+  error_message: string | null;
+  allotted_kitta: number | null;
+  applied_at: string | null;
+  allotment_checked_at: string | null;
+}
+
+export interface HistoryResponse {
+  total: number;
+  rows: HistoryRow[];
+}
+
+export interface HistoryStats {
+  total_applications: number;
+  success: number;
+  failed: number;
+  allotted: number;
+  unique_ipos: number;
+  unique_accounts: number;
+  success_rate: number;
+  allotment_rate: number;
+}
+
+// Per-IPO applied summary: company_id -> { account_username: status }
+export interface AppliedIpo {
+  company_id: number;
+  company_name: string | null;
+  scrip: string | null;
+  accounts: Record<string, string>;
+}

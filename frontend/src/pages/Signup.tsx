@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../auth/AuthContext';
+import { useAuth } from '../auth/useAuth';
 import AuthShell, { Field, SubmitButton, ErrorBanner } from './auth/AuthShell';
 
 interface Props {
@@ -29,8 +29,8 @@ export default function Signup({ onLogin }: Props) {
     setLoading(true);
     try {
       await signup(email.trim(), password, name.trim() || undefined);
-    } catch (err: any) {
-      setError(err.message || 'Unable to create account.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to create account.');
     } finally {
       setLoading(false);
     }
@@ -43,7 +43,7 @@ export default function Signup({ onLogin }: Props) {
       footer={
         <span>
           Already have an account?{' '}
-          <button onClick={onLogin} className="text-[#5B4DFF] font-semibold hover:underline">
+          <button onClick={onLogin} className="text-brand font-semibold hover:underline">
             Sign in
           </button>
         </span>
@@ -77,7 +77,7 @@ export default function Signup({ onLogin }: Props) {
             onChange={e => setPassword(e.target.value)}
             placeholder="••••••••"
           />
-          <p className="text-[11px] text-[#9CA3AF] mt-1.5">At least 8 characters, with letters and numbers.</p>
+          <p className="text-[11px] text-faint mt-1.5">At least 8 characters, with letters and numbers.</p>
         </div>
         <ErrorBanner message={error} />
         <SubmitButton loading={loading}>Create account</SubmitButton>

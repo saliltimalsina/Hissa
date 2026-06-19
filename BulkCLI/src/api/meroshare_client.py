@@ -18,7 +18,6 @@ class MeroShareClient:
         self.settings = get_settings()
         self.logger = logging.getLogger(__name__)
         self.session = requests.Session()
-        self.session.timeout = self.settings.REQUEST_TIMEOUT
 
     def authenticate(self, user: User) -> Optional[str]:
         """Authenticate user and return token"""
@@ -33,7 +32,9 @@ class MeroShareClient:
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
 
         try:
-            response = self.session.post(url, json=payload, headers=headers)
+            response = self.session.post(
+                url, json=payload, headers=headers, timeout=(5, 30)
+            )
 
             if response.status_code == HTTPStatus.OK:
                 token = response.headers.get("Authorization", "").strip()
@@ -144,9 +145,11 @@ class MeroShareClient:
 
         try:
             if method.upper() == "GET":
-                response = self.session.get(url, headers=headers)
+                response = self.session.get(url, headers=headers, timeout=(5, 30))
             elif method.upper() == "POST":
-                response = self.session.post(url, json=payload, headers=headers)
+                response = self.session.post(
+                    url, json=payload, headers=headers, timeout=(5, 30)
+                )
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
 

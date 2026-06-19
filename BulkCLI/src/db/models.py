@@ -12,6 +12,11 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # SEC-03: bumped on logout / password reset to invalidate all prior JWTs.
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
+    # SEC-04: per-account login lockout (defense-in-depth on top of IP rate limit).
+    failed_login_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    locked_until = Column(DateTime, nullable=True)
 
     accounts = relationship("MSAccount", back_populates="owner", cascade="all, delete-orphan")
     history = relationship("ApplicationHistory", back_populates="owner", cascade="all, delete-orphan")
@@ -78,5 +83,11 @@ class SchedulerRule(Base):
     active = Column(Boolean, default=True)
     last_run_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Phase 2b — per-rule safety caps enforced by the automation engine on every
+    # run. Defaults are deliberately conservative: at most 50 accounts touched and
+    # at most 100 kitta applied per account, per rule, per run. These cap how much
+    # money an unattended run can move if a rule is misconfigured.
+    max_accounts = Column(Integer, nullable=False, default=50, server_default="50")
+    max_kitta = Column(Integer, nullable=False, default=100, server_default="100")
 
     owner = relationship("User", back_populates="scheduler_rules")

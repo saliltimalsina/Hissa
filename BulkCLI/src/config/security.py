@@ -10,6 +10,7 @@ weak development defaults are allowed but loudly warned.
 """
 
 import os
+import secrets
 import sys
 import warnings
 
@@ -20,8 +21,13 @@ IS_PROD = bool(os.environ.get("DATABASE_URL", "").strip())
 if os.environ.get("APP_ENV", "").lower() in ("dev", "development", "local"):
     IS_PROD = False
 
-_DEV_JWT = "dev-only-jwt-secret-do-not-use-in-prod"
-_DEV_ENC = "dev-only-encryption-key-do-not-use-in-prod"
+# Dev-only fallbacks are generated fresh per process so the values are never
+# committed to this PUBLIC repo (a fixed published secret would let anyone forge
+# dev JWTs / decrypt dev-stored creds). These are returned by _require() ONLY in
+# local dev; in prod _require() fail-closes before ever reaching them.
+# Tradeoff: dev tokens/encrypted data do not survive a process restart.
+_DEV_JWT = secrets.token_urlsafe(32)
+_DEV_ENC = secrets.token_urlsafe(32)
 
 
 def _require(name: str, dev_default: str) -> str:
@@ -31,7 +37,7 @@ def _require(name: str, dev_default: str) -> str:
     if IS_PROD:
         sys.stderr.write(
             f"\nFATAL: {name} is not set. Refusing to start in production.\n"
-            f"Set it as a secret (e.g. `fly secrets set {name}=...`).\n\n"
+            f"Set it as an env var (e.g. `vercel env add {name} production`).\n\n"
         )
         raise SystemExit(1)
     warnings.warn(
@@ -52,7 +58,10 @@ COOKIE_SECURE = IS_PROD
 COOKIE_SAMESITE = "strict"
 
 # Session + reset lifetimes.
-JWT_EXPIRE_DAYS = int(os.environ.get("JWT_EXPIRE_DAYS", "7"))
+# SEC-09: shortened the default session window from 7 to 3 days. Logout/reset
+# now revoke server-side (SEC-03), so a shorter ceiling is a cheap, safe win and
+# is not a sliding session (no refresh logic added). Overridable via env.
+JWT_EXPIRE_DAYS = int(os.environ.get("JWT_EXPIRE_DAYS", "3"))
 RESET_TOKEN_TTL_MINUTES = int(os.environ.get("RESET_TOKEN_TTL_MINUTES", "60"))
 
 # Public URL of the frontend, used to build password-reset links.

@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Test / coverage / e2e artifacts
+coverage
+/playwright-report/
+/playwright/.cache/
+/test-results/
+/blob-report/
+.vitest/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

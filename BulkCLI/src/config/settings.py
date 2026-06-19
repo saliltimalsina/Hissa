@@ -80,9 +80,24 @@ class Settings:
             raise ValueError("MAX_RETRY_ATTEMPTS cannot be negative")
 
     def _ensure_directories(self):
-        """Ensure required directories exist"""
+        """Ensure the log directory exists.
+
+        On a read-only serverless filesystem (e.g. Vercel, where only /tmp is
+        writable) creating ./logs raises OSError at import time and would crash
+        the whole function. Fall back to a writable temp dir; if even that fails,
+        degrade gracefully (logging still works via stdout/stderr).
+        """
         log_dir = self.BASE_DIR / self.LOG_DIR
-        log_dir.mkdir(exist_ok=True)
+        try:
+            log_dir.mkdir(exist_ok=True)
+        except OSError:
+            import tempfile
+            fallback = Path(tempfile.gettempdir()) / "hissa-logs"
+            try:
+                fallback.mkdir(exist_ok=True)
+                self.LOG_DIR = str(fallback)  # absolute path; log_dir_path resolves to it
+            except OSError:
+                pass
 
     @property
     def accounts_path(self) -> Path:

@@ -1,0 +1,22 @@
+# Dependencies for the Vercel Python function (api/index.py -> BulkCLI/server.py).
+# Mirrors BulkCLI/requirements.txt. Vercel's Python runtime is Linux/CPython 3.12,
+# where psycopg2-binary ships manylinux wheels — keep it for the Neon Postgres prod DB.
+aiohttp==3.12.2
+termcolor==2.3.0
+requests>=2.31.0
+tabulate==0.9.0
+urllib3>=2.0.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.0.0
+sqlalchemy>=2.0.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+cryptography>=41.0.0
+apscheduler>=3.10.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9.9
+slowapi>=0.1.9
+email-validator>=2.1.0
+certifi>=2024.2.2

@@ -1,4 +1,7 @@
-import type { Account, Page, IPO, AccountPortfolio, AccountSnapshot } from '../types';
+import { useState, useEffect } from 'react';
+import { Users, Zap, Plus, BarChart3 } from 'lucide-react';
+import { Icon } from '../components/ui';
+import type { Account, Page, IPO, AccountPortfolio, AccountSnapshot, HistoryStats } from '../types';
 
 type Activity = { ts: number; type: 'apply' | 'verify' | 'sync' | 'error'; status: 'success' | 'failed' | 'info'; message: string };
 
@@ -11,6 +14,7 @@ interface Props {
   portfoliosFetchedAt: number | null;
   iposFetchedAt: number | null;
   activity: Activity[];
+  historyStats: HistoryStats | null;
 }
 
 function timeAgo(ts: number | null): string {
@@ -40,11 +44,11 @@ interface ActionCardProps {
 
 function ActionCard({ label, value, sub, variant, cta, onClick }: ActionCardProps) {
   const styles = {
-    urgent: { bg: 'bg-white', accent: 'text-[#B91C1C]', dot: 'bg-[#EF4444]', subColor: 'text-[#B91C1C]', cta: 'text-[#B91C1C]' },
-    warning: { bg: 'bg-white', accent: 'text-[#92400E]', dot: 'bg-[#F59E0B]', subColor: 'text-[#92400E]', cta: 'text-[#92400E]' },
-    good: { bg: 'bg-white', accent: 'text-[#1F9D55]', dot: 'bg-[#1F9D55]', subColor: 'text-[#1F9D55]', cta: 'text-[#1F9D55]' },
-    info: { bg: 'bg-white', accent: 'text-[#5B4DFF]', dot: 'bg-[#5B4DFF]', subColor: 'text-[#5B4DFF]', cta: 'text-[#5B4DFF]' },
-    neutral: { bg: 'bg-white', accent: 'text-[#111827]', dot: 'bg-[#9CA3AF]', subColor: 'text-[#6B7280]', cta: 'text-[#6B7280]' },
+    urgent: { bg: 'bg-white', accent: 'text-danger-fg', dot: 'bg-danger', subColor: 'text-danger-fg', cta: 'text-danger-fg' },
+    warning: { bg: 'bg-white', accent: 'text-warn-fg', dot: 'bg-warn', subColor: 'text-warn-fg', cta: 'text-warn-fg' },
+    good: { bg: 'bg-white', accent: 'text-success', dot: 'bg-success', subColor: 'text-success', cta: 'text-success' },
+    info: { bg: 'bg-white', accent: 'text-brand', dot: 'bg-brand', subColor: 'text-brand', cta: 'text-brand' },
+    neutral: { bg: 'bg-white', accent: 'text-ink', dot: 'bg-faint', subColor: 'text-muted', cta: 'text-muted' },
   }[variant];
 
   return (
@@ -54,9 +58,9 @@ function ActionCard({ label, value, sub, variant, cta, onClick }: ActionCardProp
     >
       <div className="flex items-center gap-2 mb-3">
         <span className={`w-1.5 h-1.5 rounded-full ${styles.dot}`} />
-        <p className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">{label}</p>
+        <p className="text-overline text-muted">{label}</p>
       </div>
-      <p className={`text-[32px] font-bold tabular leading-none tracking-tight ${styles.accent}`}>{value}</p>
+      <p className={`text-metric-lg ${styles.accent}`}>{value}</p>
       <div className="flex items-center justify-between mt-3">
         <p className={`text-xs font-medium ${styles.subColor}`}>{sub}</p>
         {cta && onClick && (
@@ -67,7 +71,7 @@ function ActionCard({ label, value, sub, variant, cta, onClick }: ActionCardProp
   );
 }
 
-export default function Overview({ accounts, onNavigate, snapshots, ipos, portfolios, portfoliosFetchedAt, iposFetchedAt, activity }: Props) {
+export default function Overview({ accounts, onNavigate, snapshots, ipos, portfolios, portfoliosFetchedAt, iposFetchedAt, activity, historyStats }: Props) {
   const issues = Object.values(snapshots).filter(s => ['auth_failed', 'expired', 'error'].includes(s.status));
   const expiring = Object.values(snapshots).filter(s => s.status === 'expiring');
   const healthy = Object.values(snapshots).filter(s => s.status === 'healthy').length;
@@ -76,10 +80,18 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
 
   const totalPortfolioValue = portfolios.reduce((s, p) => s + (p.total_value || 0), 0);
 
+  // "Now" is read from state (seeded once on mount, refreshed each minute) so we
+  // never call the impure Date.now() directly during render.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Closing-soon IPOs (≤2 days)
   const closingSoon = ipos.filter(ipo => {
     if (!ipo.issueCloseDate) return false;
-    const days = Math.ceil((new Date(ipo.issueCloseDate).getTime() - Date.now()) / 86400000);
+    const days = Math.ceil((new Date(ipo.issueCloseDate).getTime() - now) / 86400000);
     return days >= 0 && days <= 2;
   });
 
@@ -88,35 +100,33 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
   // Onboarding state
   if (accounts.length === 0) {
     return (
-      <div className="p-8 max-w-7xl">
-        <h1 className="text-2xl font-bold text-[#111827] tracking-tight mb-1">Overview</h1>
-        <p className="text-sm text-[#6B7280] mb-8">Capital snapshot across your accounts</p>
+      <div className="p-4 sm:p-8 max-w-7xl">
+        <h1 className="text-display text-ink mb-1">Overview</h1>
+        <p className="text-sm text-muted mb-8">Capital snapshot across your accounts</p>
 
         <div className="bg-white rounded-xl p-8 shadow-[0_1px_3px_rgba(0,0,0,0.04)] max-w-2xl">
-          <div className="w-12 h-12 bg-[#F4F3FF] rounded-xl flex items-center justify-center mb-4">
-            <svg className="w-6 h-6 text-[#5B4DFF]" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v1h8v-1z" />
-            </svg>
+          <div className="w-12 h-12 bg-brand-tint rounded-xl flex items-center justify-center mb-4">
+            <Icon icon={Users} size={24} className="text-brand" />
           </div>
-          <h2 className="text-lg font-bold text-[#111827] mb-1">Get started</h2>
-          <p className="text-sm text-[#6B7280] mb-6">Add your MeroShare credentials to begin managing IPO applications.</p>
-          <ol className="space-y-3 text-sm text-[#374151] mb-6">
+          <h2 className="text-title text-ink mb-1">Get started</h2>
+          <p className="text-sm text-muted mb-6">Add your MeroShare credentials to begin managing IPO applications.</p>
+          <ol className="space-y-3 text-sm text-body mb-6">
             <li className="flex items-start gap-3">
-              <span className="w-5 h-5 rounded-full bg-[#5B4DFF] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
-              <span>Add MeroShare credentials in <button onClick={() => onNavigate('accounts')} className="text-[#5B4DFF] underline font-semibold">Accounts</button></span>
+              <span className="w-5 h-5 rounded-full bg-brand text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
+              <span>Add MeroShare credentials in <button onClick={() => onNavigate('accounts')} className="text-brand underline font-semibold">Accounts</button></span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="w-5 h-5 rounded-full bg-[#ECECF2] text-[#6B7280] text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
+              <span className="w-5 h-5 rounded-full bg-line text-muted text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
               <span>Run Health Check to verify each account</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="w-5 h-5 rounded-full bg-[#ECECF2] text-[#6B7280] text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
+              <span className="w-5 h-5 rounded-full bg-line text-muted text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
               <span>Open IPO Engine and bulk apply</span>
             </li>
           </ol>
           <button
             onClick={() => onNavigate('accounts')}
-            className="px-5 py-2.5 bg-[#5B4DFF] hover:bg-[#4C3FF0] text-white rounded-lg text-sm font-semibold transition-colors"
+            className="px-5 py-2.5 bg-brand hover:bg-brand-hover text-white rounded-lg text-sm font-semibold transition-colors"
           >
             Add Accounts →
           </button>
@@ -126,16 +136,16 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
   }
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl">
+    <div className="p-4 sm:p-8 space-y-8 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-bold text-[#111827] tracking-tight">Overview</h1>
-        <p className="text-sm text-[#6B7280] mt-1">Capital snapshot across your accounts</p>
+        <h1 className="text-display text-ink">Overview</h1>
+        <p className="text-sm text-muted mt-1">Capital snapshot across your accounts</p>
       </div>
 
       {/* Action-center cards: what needs attention */}
       <div>
-        <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider mb-4">Operational State</p>
-        <div className="grid grid-cols-4 gap-4">
+        <p className="text-xs font-semibold text-faint uppercase tracking-wider mb-4">Operational State</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <ActionCard
             label="Accounts Attention"
             value={needsAttention}
@@ -169,30 +179,59 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
         </div>
       </div>
 
+      {/* Application history — server-backed stats (not localStorage) */}
+      {historyStats && historyStats.total_applications > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-faint uppercase tracking-wider mb-4">Application History</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-overline text-muted mb-2">Total Applications</p>
+              <p className="text-metric text-ink">{historyStats.total_applications}</p>
+              <p className="text-xs text-muted mt-2">{historyStats.unique_ipos} IPOs · {historyStats.unique_accounts} accounts</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-overline text-muted mb-2">Success Rate</p>
+              <p className="text-metric text-success">{historyStats.success_rate}%</p>
+              <p className="text-xs text-muted mt-2">{historyStats.success} ok · {historyStats.failed} failed</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-overline text-muted mb-2">Allotted</p>
+              <p className="text-metric text-brand">{historyStats.allotted}</p>
+              <p className="text-xs text-muted mt-2">{historyStats.allotment_rate}% allotment rate</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <p className="text-overline text-muted mb-2">Failed</p>
+              <p className="text-metric text-danger">{historyStats.failed}</p>
+              <p className="text-xs text-muted mt-2">across all applications</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2-col layout: activity feed + quick actions/health */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Activity feed */}
         <div className="col-span-2 bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#F4F4F8] flex items-center justify-between">
-            <p className="text-sm font-bold text-[#111827]">Recent Activity</p>
-            {activity.length > 0 && <span className="text-xs text-[#9CA3AF]">{activity.length} events</span>}
+          <div className="px-5 py-4 border-b border-line-soft flex items-center justify-between">
+            <p className="text-sm font-bold text-ink">Recent Activity</p>
+            {activity.length > 0 && <span className="text-xs text-faint">{activity.length} events</span>}
           </div>
-          <div className="divide-y divide-[#F4F4F8] max-h-96 overflow-y-auto">
+          <div className="divide-y divide-line-soft max-h-96 overflow-y-auto">
             {activity.length === 0 && (
               <div className="px-5 py-12 text-center">
-                <p className="text-sm text-[#9CA3AF]">No activity yet</p>
-                <p className="text-xs text-[#9CA3AF] mt-1">Verify accounts or apply for an IPO to see events here</p>
+                <p className="text-sm text-faint">No activity yet</p>
+                <p className="text-xs text-faint mt-1">Verify accounts or apply for an IPO to see events here</p>
               </div>
             )}
             {activity.map((a, i) => {
-              const color = a.status === 'success' ? 'bg-[#1F9D55]' : a.status === 'failed' ? 'bg-[#EF4444]' : 'bg-[#5B4DFF]';
+              const color = a.status === 'success' ? 'bg-success' : a.status === 'failed' ? 'bg-danger' : 'bg-brand';
               return (
                 <div key={i} className="px-5 py-3 flex items-start gap-3">
                   <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5 ${color}`} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-[#111827] font-medium truncate">{a.message}</p>
-                    <p className="text-[11px] text-[#9CA3AF] mt-0.5 capitalize">{a.type} · {timeAgo(a.ts)}</p>
+                    <p className="text-sm text-ink font-medium truncate">{a.message}</p>
+                    <p className="text-[11px] text-faint mt-0.5 capitalize">{a.type} · {timeAgo(a.ts)}</p>
                   </div>
                 </div>
               );
@@ -204,33 +243,27 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
         <div className="space-y-6">
           {/* Quick actions */}
           <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-            <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider mb-3">Quick Actions</p>
+            <p className="text-xs font-semibold text-faint uppercase tracking-wider mb-3">Quick Actions</p>
             <div className="space-y-2">
               <button
                 onClick={() => onNavigate('ipo-engine')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 bg-[#5B4DFF] hover:bg-[#4C3FF0] text-white rounded-lg text-sm font-semibold transition-colors"
+                className="w-full flex items-center gap-3 px-3 py-2.5 bg-brand hover:bg-brand-hover text-white rounded-lg text-sm font-semibold transition-colors"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-                </svg>
+                <Icon icon={Zap} size={16} />
                 Place IPO Order
               </button>
               <button
                 onClick={() => onNavigate('accounts')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 border border-[#ECECF2] text-[#374151] rounded-lg text-sm font-medium hover:bg-[#F7F8FC] transition-colors"
+                className="w-full flex items-center gap-3 px-3 py-2.5 border border-line text-body rounded-lg text-sm font-medium hover:bg-surface transition-colors"
               >
-                <svg className="w-4 h-4 text-[#9CA3AF]" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10 2a1 1 0 011 1v6h6a1 1 0 110 2h-6v6a1 1 0 11-2 0v-6H3a1 1 0 010-2h6V3a1 1 0 011-1z" />
-                </svg>
+                <Icon icon={Plus} size={16} className="text-faint" />
                 Add Account
               </button>
               <button
                 onClick={() => onNavigate('portfolio')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 border border-[#ECECF2] text-[#374151] rounded-lg text-sm font-medium hover:bg-[#F7F8FC] transition-colors"
+                className="w-full flex items-center gap-3 px-3 py-2.5 border border-line text-body rounded-lg text-sm font-medium hover:bg-surface transition-colors"
               >
-                <svg className="w-4 h-4 text-[#9CA3AF]" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-                </svg>
+                <Icon icon={BarChart3} size={16} className="text-faint" />
                 View Portfolio
               </button>
             </div>
@@ -238,35 +271,35 @@ export default function Overview({ accounts, onNavigate, snapshots, ipos, portfo
 
           {/* Health summary */}
           <div className="bg-white rounded-xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-            <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider mb-3">Health</p>
+            <p className="text-xs font-semibold text-faint uppercase tracking-wider mb-3">Health</p>
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-sm text-[#111827]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#1F9D55]" />
+                <span className="flex items-center gap-2 text-sm text-ink">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success" />
                   Healthy
                 </span>
-                <span className="text-sm font-bold text-[#111827] tabular">{healthy}</span>
+                <span className="text-sm font-bold text-ink tabular">{healthy}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-sm text-[#111827]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />
+                <span className="flex items-center gap-2 text-sm text-ink">
+                  <span className="w-1.5 h-1.5 rounded-full bg-warn" />
                   Expiring
                 </span>
-                <span className="text-sm font-bold text-[#111827] tabular">{expiring.length}</span>
+                <span className="text-sm font-bold text-ink tabular">{expiring.length}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-sm text-[#111827]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444]" />
+                <span className="flex items-center gap-2 text-sm text-ink">
+                  <span className="w-1.5 h-1.5 rounded-full bg-danger" />
                   Failed
                 </span>
-                <span className="text-sm font-bold text-[#111827] tabular">{issues.length}</span>
+                <span className="text-sm font-bold text-ink tabular">{issues.length}</span>
               </div>
-              <div className="flex items-center justify-between pt-2.5 border-t border-[#F4F4F8]">
-                <span className="flex items-center gap-2 text-sm text-[#6B7280]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#9CA3AF]" />
+              <div className="flex items-center justify-between pt-2.5 border-t border-line-soft">
+                <span className="flex items-center gap-2 text-sm text-muted">
+                  <span className="w-1.5 h-1.5 rounded-full bg-faint" />
                   Unverified
                 </span>
-                <span className="text-sm font-bold text-[#6B7280] tabular">{unverified}</span>
+                <span className="text-sm font-bold text-muted tabular">{unverified}</span>
               </div>
             </div>
           </div>

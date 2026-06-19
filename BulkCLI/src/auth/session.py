@@ -18,11 +18,11 @@ CSRF_HEADER = "x-csrf-token"
 _MAX_AGE = JWT_EXPIRE_DAYS * 24 * 3600
 
 
-def set_session(response: Response, user_id: int) -> None:
+def set_session(response: Response, user_id: int, token_version: int = 0) -> None:
     """Issue session + CSRF cookies after login/signup."""
     response.set_cookie(
         key=COOKIE_NAME,
-        value=create_token(user_id),
+        value=create_token(user_id, token_version),
         max_age=_MAX_AGE,
         httponly=True,
         secure=COOKIE_SECURE,
