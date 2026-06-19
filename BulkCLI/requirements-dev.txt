@@ -1,0 +1,10 @@
+# Backend test harness dependencies for Hissa.
+# Pinned to versions that resolve on Python 3.14 (local interpreter).
+# Install AFTER the app runtime deps (see README / requirements.txt). Tests use
+# in-memory SQLite and never touch live MeroShare / Postgres, so psycopg2-binary
+# is intentionally NOT required here.
+pytest==9.1.0
+pytest-asyncio==1.4.0
+httpx==0.28.1
+pytest-cov==7.1.0
+coverage==7.14.1
