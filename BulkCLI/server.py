@@ -12,6 +12,8 @@ from datetime import datetime
 
 import os
 
+from contextlib import asynccontextmanager
+
 import requests as req_lib
 from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,19 +43,27 @@ from src.routers import accounts as accounts_router
 from src.routers import history as history_router
 from src.routers import scheduler as scheduler_router
 
-app = FastAPI(title="Hissa API")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Create DB tables if they don't exist (fresh Postgres on first deploy).
+
+    create_all is idempotent, but on Vercel this runs once per COLD START and
+    costs one DB round-trip. That's an acceptable trade-off here: the schema is
+    tiny, cold starts are infrequent on a low-traffic app, and it removes the
+    need for a separate migration step. If cold-start latency ever matters, move
+    schema creation to a one-off deploy/cron step and drop this call.
+    """
+    from src.db.database import init_db
+    init_db()
+    yield
+
+
+app = FastAPI(title="Hissa API", lifespan=_lifespan)
 
 # Rate limiting (slowapi) — keyed by client IP, applied per-endpoint in routers.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    """Create DB tables if they don't exist (fresh Postgres on first deploy)."""
-    from src.db.database import init_db
-    init_db()
 
 
 # Allowed CORS origins: env-driven, defaulting to local dev + the prod frontend.

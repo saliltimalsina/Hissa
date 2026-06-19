@@ -37,7 +37,7 @@ def _require(name: str, dev_default: str) -> str:
     if IS_PROD:
         sys.stderr.write(
             f"\nFATAL: {name} is not set. Refusing to start in production.\n"
-            f"Set it as a secret (e.g. `fly secrets set {name}=...`).\n\n"
+            f"Set it as an env var (e.g. `vercel env add {name} production`).\n\n"
         )
         raise SystemExit(1)
     warnings.warn(
